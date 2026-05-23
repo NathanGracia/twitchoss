@@ -1,0 +1,14 @@
+[Unit]
+Description=TwitchOSS - Ad-free Twitch streaming interface
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/twitchoss
+ExecStart=/home/ubuntu/twitchoss-env/bin/python server.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

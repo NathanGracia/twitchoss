@@ -415,7 +415,7 @@
     showOverlay('loading');
 
     document.getElementById('chat-frame').src =
-      `https://www.twitch.tv/embed/${channel}/chat?parent=localhost&darkpopout`;
+      `https://www.twitch.tv/embed/${channel}/chat?parent=${location.hostname}&darkpopout`;
     document.getElementById('btn-popout-chat').dataset.channel = channel;
 
     // Demarre streamlink + ffmpeg côté serveur

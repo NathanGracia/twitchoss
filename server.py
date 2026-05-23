@@ -4,7 +4,7 @@ from pathlib import Path
 
 app = Flask(__name__)
 
-STREAMLINK = r"C:\Users\nathan\AppData\Local\Programs\Python\Python311\Scripts\streamlink.exe"
+STREAMLINK = "/home/ubuntu/twitchoss-env/bin/streamlink"
 BASE_DIR   = Path(os.path.abspath(__file__)).parent
 CHANNELS_FILE = BASE_DIR / "channels.txt"
 HLS_DIR    = BASE_DIR / "hls"
@@ -145,6 +145,4 @@ def start(channel):
 
 if __name__ == "__main__":
     HLS_DIR.mkdir(exist_ok=True)
-    import webbrowser
-    webbrowser.open("http://localhost:5000")
-    app.run(host="localhost", port=5000, threaded=True, use_reloader=False)
+    app.run(host="0.0.0.0", port=5000, threaded=True, use_reloader=False)
