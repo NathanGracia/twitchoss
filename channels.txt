@@ -102,3 +102,6 @@ chap_gg
 player5
 botezlive
 michou
+
+xqc
+aminematue
