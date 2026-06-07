@@ -418,6 +418,43 @@
       width: 100%;
     }
     #debug-copy:hover { background: rgba(145,71,255,0.35); }
+
+    /* ── Fullscreen button ── */
+    .fs-btn {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      z-index: 10;
+      background: rgba(0,0,0,0.55);
+      border: none;
+      border-radius: 6px;
+      color: #fff;
+      cursor: pointer;
+      padding: 7px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      transition: opacity 0.18s, background 0.15s;
+    }
+    .fs-btn:hover { background: rgba(0,0,0,0.85); }
+    .player-wrapper:hover .fs-btn { opacity: 1; }
+
+    /* Always visible on touch devices (no hover) */
+    @media (hover: none) {
+      .fs-btn { opacity: 0.75; }
+    }
+
+    /* Ensure video fills fullscreen properly */
+    :fullscreen .player-wrapper,
+    :-webkit-full-screen .player-wrapper {
+      width: 100vw;
+      height: 100vh;
+    }
+    :fullscreen video,
+    :-webkit-full-screen video {
+      display: block !important;
+    }
   </style>
 </head>
 <body>
@@ -459,6 +496,14 @@
       </div>
       <video id="video" playsinline></video>
       <div id="debug-panel"></div>
+      <button class="fs-btn" id="btn-fs" onclick="toggleFullscreen()" title="Plein écran (F)">
+        <svg id="icon-fs-enter" viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+          <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
+        </svg>
+        <svg id="icon-fs-exit" viewBox="0 0 24 24" width="20" height="20" fill="currentColor" style="display:none">
+          <path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"/>
+        </svg>
+      </button>
     </div>
     <div class="info-bar">
       <button class="ctrl-btn" id="btn-playpause" onclick="togglePlay()" title="Espace">
@@ -1035,7 +1080,28 @@
     if (e.code === 'KeyD')      { dbgToggle(); }
     if (e.code === 'ArrowUp')   { e.preventDefault(); setVolume(Math.min(1, v.volume + 0.1)); }
     if (e.code === 'ArrowDown') { e.preventDefault(); setVolume(Math.max(0, v.volume - 0.1)); }
+    if (e.code === 'KeyF')      { toggleFullscreen(); }
   });
+
+  // ── Fullscreen ─────────────────────────────────────
+  function toggleFullscreen() {
+    const el = document.querySelector('.player-wrapper');
+    const isFs = document.fullscreenElement || document.webkitFullscreenElement;
+    if (isFs) {
+      (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    } else {
+      (el.requestFullscreen || el.webkitRequestFullscreen).call(el);
+    }
+  }
+
+  function updateFsUI() {
+    const isFs = document.fullscreenElement || document.webkitFullscreenElement;
+    document.getElementById('icon-fs-enter').style.display = isFs ? 'none' : '';
+    document.getElementById('icon-fs-exit').style.display  = isFs ? ''     : 'none';
+  }
+
+  document.addEventListener('fullscreenchange',       updateFsUI);
+  document.addEventListener('webkitfullscreenchange', updateFsUI);
 
   function popoutChat() {
     const ch = document.getElementById('btn-popout-chat').dataset.channel;
