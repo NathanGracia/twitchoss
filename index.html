@@ -44,8 +44,9 @@
     }
 
     .sidebar-header {
-      padding: 16px 16px 12px;
+      padding: 14px 16px 10px;
       border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
     }
 
     .logo {
@@ -55,15 +56,69 @@
       letter-spacing: -0.3px;
     }
 
+    /* Tabs */
+    .tabs {
+      display: flex;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    .tab {
+      flex: 1;
+      padding: 9px 0;
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: var(--text-muted);
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s;
+      margin-bottom: -1px;
+    }
+
+    .tab.active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+    }
+
+    .tab:hover:not(.active) { color: var(--text); }
+
+    /* Search */
+    .search-wrap {
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    .search-input {
+      width: 100%;
+      background: var(--bg-hover);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 10px;
+      color: var(--text);
+      font-size: 13px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    .search-input:focus { border-color: var(--accent); }
+    .search-input::placeholder { color: var(--text-muted); }
+
+    /* Section labels */
     .section-label {
       font-size: 10px;
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 1px;
       color: var(--text-muted);
-      padding: 14px 16px 6px;
+      padding: 10px 16px 4px;
     }
 
+    /* Channel list */
     .channel-list {
       flex: 1;
       overflow-y: auto;
@@ -74,7 +129,7 @@
       display: flex;
       align-items: center;
       gap: 10px;
-      padding: 7px 14px;
+      padding: 7px 8px 7px 14px;
       margin: 1px 6px;
       border-radius: 6px;
       cursor: pointer;
@@ -96,6 +151,17 @@
       font-weight: 700;
       flex-shrink: 0;
       color: #fff;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .avatar img {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: 50%;
     }
 
     .channel-item.active .avatar { box-shadow: 0 0 0 2px var(--accent); }
@@ -106,6 +172,7 @@
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      flex: 1;
     }
 
     .channel-item.active .ch-name { color: var(--accent); }
@@ -114,13 +181,37 @@
       width: 8px;
       height: 8px;
       border-radius: 50%;
-      background: #eb0400;
+      background: var(--live);
       flex-shrink: 0;
-      margin-left: auto;
       opacity: 0;
       transition: opacity 0.3s;
     }
+
     .live-dot.on { opacity: 1; }
+
+    .star-btn {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      padding: 3px 5px;
+      font-size: 14px;
+      line-height: 1;
+      flex-shrink: 0;
+      opacity: 0;
+      transition: opacity 0.12s, color 0.12s;
+      border-radius: 4px;
+    }
+
+    .channel-item:hover .star-btn { opacity: 1; }
+    .star-btn.pinned { opacity: 1; color: var(--accent); }
+    .star-btn:hover  { color: var(--accent); }
+
+    .list-hint {
+      padding: 10px 16px;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
 
     .channel-list::-webkit-scrollbar { width: 4px; }
     .channel-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
@@ -277,6 +368,93 @@
       border: none;
       background: var(--bg-base);
     }
+
+    #no-chat {
+      flex: 1;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 8px;
+      color: var(--text-muted);
+      font-size: 13px;
+    }
+
+    /* Debug panel */
+    #debug-panel {
+      display: none;
+      position: absolute;
+      bottom: 8px;
+      left: 8px;
+      background: rgba(0,0,0,0.92);
+      border: 1px solid rgba(145,71,255,0.4);
+      border-radius: 6px;
+      padding: 10px 14px;
+      font-family: monospace;
+      font-size: 11px;
+      color: #c9d1d9;
+      z-index: 100;
+      min-width: 360px;
+      max-width: 520px;
+      pointer-events: auto;
+      user-select: text;
+      line-height: 1.7;
+    }
+    #debug-panel.on { display: block; }
+    #debug-panel b  { color: #9147ff; }
+    #debug-panel .dbg-err  { color: #ff6b6b; }
+    #debug-panel .dbg-ok   { color: #56d364; }
+    #debug-panel .dbg-warn { color: #e3b341; }
+    #debug-copy {
+      margin-top: 6px;
+      background: rgba(145,71,255,0.2);
+      border: 1px solid rgba(145,71,255,0.4);
+      border-radius: 4px;
+      color: #9147ff;
+      font-size: 11px;
+      font-family: monospace;
+      cursor: pointer;
+      padding: 3px 10px;
+      width: 100%;
+    }
+    #debug-copy:hover { background: rgba(145,71,255,0.35); }
+
+    /* ── Fullscreen button ── */
+    .fs-btn {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      z-index: 10;
+      background: rgba(0,0,0,0.55);
+      border: none;
+      border-radius: 6px;
+      color: #fff;
+      cursor: pointer;
+      padding: 7px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      transition: opacity 0.18s, background 0.15s;
+    }
+    .fs-btn:hover { background: rgba(0,0,0,0.85); }
+    .player-wrapper:hover .fs-btn { opacity: 1; }
+
+    /* Always visible on touch devices (no hover) */
+    @media (hover: none) {
+      .fs-btn { opacity: 0.75; }
+    }
+
+    /* Ensure video fills fullscreen properly */
+    :fullscreen .player-wrapper,
+    :-webkit-full-screen .player-wrapper {
+      width: 100vw;
+      height: 100vh;
+    }
+    :fullscreen video,
+    :-webkit-full-screen video {
+      display: block !important;
+    }
   </style>
 </head>
 <body>
@@ -286,8 +464,20 @@
     <div class="sidebar-header">
       <div class="logo">TwitchOSS</div>
     </div>
-    <div class="section-label">Chaînes</div>
-    <div class="channel-list" id="channel-list"></div>
+
+    <div class="tabs">
+      <button class="tab active" id="tab-twitch" onclick="switchTab('twitch')">Twitch</button>
+      <button class="tab"        id="tab-iptv"   onclick="switchTab('iptv')">Chaînes TV</button>
+    </div>
+
+    <div class="search-wrap">
+      <input class="search-input" id="search-input" type="text" placeholder="Rechercher…" oninput="onSearch(this.value)">
+    </div>
+
+    <div class="channel-list" id="twitch-list"></div>
+    <div class="channel-list" id="iptv-list" style="display:none">
+      <div class="list-hint">Chargement…</div>
+    </div>
   </aside>
 
   <main class="main">
@@ -305,28 +495,32 @@
         <p id="error-msg">Chaîne hors ligne ou erreur</p>
       </div>
       <video id="video" playsinline></video>
+      <div id="debug-panel"></div>
+      <button class="fs-btn" id="btn-fs" onclick="toggleFullscreen()" title="Plein écran (F)">
+        <svg id="icon-fs-enter" viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+          <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
+        </svg>
+        <svg id="icon-fs-exit" viewBox="0 0 24 24" width="20" height="20" fill="currentColor" style="display:none">
+          <path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"/>
+        </svg>
+      </button>
     </div>
     <div class="info-bar">
-      <!-- Play/Pause -->
       <button class="ctrl-btn" id="btn-playpause" onclick="togglePlay()" title="Espace">
-        <svg id="icon-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+        <svg id="icon-play"  viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
         <svg id="icon-pause" viewBox="0 0 24 24" style="display:none"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
       </button>
-
-      <!-- Volume -->
       <div class="volume-group">
         <button class="ctrl-btn" id="btn-mute" onclick="toggleMute()" title="M">
-          <svg id="icon-vol" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 7.97v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/></svg>
+          <svg id="icon-vol"  viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 7.97v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/></svg>
           <svg id="icon-mute" viewBox="0 0 24 24" style="display:none"><path d="M16.5 12A4.5 4.5 0 0 0 14 7.97v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06A8.99 8.99 0 0 0 17.73 19l2 2L21 19.73l-18-18zM12 4L9.91 6.09 12 8.18V4z"/></svg>
         </button>
         <input class="volume-slider" id="volume-slider" type="range" min="0" max="1" step="0.02" value="1" oninput="setVolume(this.value)">
       </div>
-
       <div class="separator"></div>
-
       <span class="live-badge" id="live-badge">EN DIRECT</span>
       <span class="info-channel" id="info-channel">—</span>
-      <span class="info-hint" id="info-hint"></span>
+      <span class="info-hint"    id="info-hint"></span>
     </div>
   </main>
 
@@ -338,15 +532,326 @@
       </button>
     </div>
     <iframe id="chat-frame" src="" allowtransparency="true"></iframe>
+    <div id="no-chat">
+      <span style="font-size:28px;opacity:0.2">📺</span>
+      Pas de chat pour les chaînes IPTV
+    </div>
   </aside>
 
 </div>
 <script>
   let hls = null;
-  let _channels = [];
-  let _info = {};
-  let _activeChannel = null;
+  let _channels    = [];
+  let _info        = {};
+  let _iptvChannels = []; // [{name, url, logo}]
+  let _activeChannel  = null;
+  let _activeType     = null; // 'twitch' | 'iptv'
+  let _currentIptvIdx = null;
+  let _currentTab     = 'twitch';
+  let _searchQuery    = '';
 
+  // ── Debug ──────────────────────────────────────────
+  const _dbg = {
+    on: false,
+    mode: '—',
+    playlist: '—',
+    events: [],
+    stallCount: 0,
+    waitingCount: 0,
+    errorCount: 0,
+    bufferLen: 0,
+    segCount: 0,
+    m3u8Raw: null,
+  };
+
+  function dbgLog(cls, msg) {
+    const ts = new Date().toLocaleTimeString('fr-FR', {hour12: false});
+    _dbg.events.unshift({ ts, cls, msg });
+    if (_dbg.events.length > 12) _dbg.events.pop();
+    dbgRender();
+  }
+
+  function dbgText() {
+    const rows = _dbg.events.map(e => `${e.ts} [${e.cls}] ${e.msg}`).join('\n');
+    return [
+      `Mode: ${_dbg.mode}  Playlist: ${_dbg.playlist}`,
+      `Buffer: ${_dbg.bufferLen.toFixed(1)}s  Segs: ${_dbg.segCount}`,
+      `Stalls: ${_dbg.stallCount}  Waiting: ${_dbg.waitingCount}  Erreurs: ${_dbg.errorCount}`,
+      _dbg.m3u8Raw ? '\n--- M3U8 brut ---\n' + _dbg.m3u8Raw : '',
+      '\n--- Événements ---',
+      rows,
+    ].join('\n');
+  }
+
+  function dbgRender() {
+    if (!_dbg.on) return;
+    const rows = _dbg.events.map(e =>
+      `<div><span style="color:#666">${e.ts}</span> <span class="dbg-${e.cls}">${e.msg}</span></div>`
+    ).join('');
+    const m3u8block = _dbg.m3u8Raw
+      ? `<hr style="border-color:rgba(255,255,255,0.1);margin:4px 0">
+         <div style="color:#888;white-space:pre;overflow-x:auto">${_dbg.m3u8Raw.replace(/</g,'&lt;')}</div>`
+      : `<div style="color:#555"><span onclick="dbgFetchM3u8()" style="cursor:pointer;color:#9147ff;text-decoration:underline">↓ charger le m3u8 brut</span></div>`;
+    document.getElementById('debug-panel').innerHTML = `
+      <div><b>Mode</b> ${_dbg.mode} &nbsp; <b>Playlist</b> ${_dbg.playlist}</div>
+      <div><b>Buffer</b> ${_dbg.bufferLen.toFixed(1)}s &nbsp; <b>Segs reçus</b> ${_dbg.segCount}</div>
+      <div><b>Stalls</b> <span class="${_dbg.stallCount ? 'dbg-err' : 'dbg-ok'}">${_dbg.stallCount}</span>
+           &nbsp; <b>Waiting</b> <span class="${_dbg.waitingCount ? 'dbg-warn' : 'dbg-ok'}">${_dbg.waitingCount}</span>
+           &nbsp; <b>Erreurs</b> <span class="${_dbg.errorCount ? 'dbg-err' : 'dbg-ok'}">${_dbg.errorCount}</span></div>
+      ${m3u8block}
+      <hr style="border-color:rgba(255,255,255,0.1);margin:4px 0">
+      ${rows}
+      <div style="color:#555;margin-top:2px">D = fermer | sélectionnable</div>
+      <button id="debug-copy" onclick="dbgCopy()">📋 Copier tout le debug</button>`;
+  }
+
+  async function dbgFetchM3u8() {
+    _dbg.m3u8Raw = 'chargement…';
+    dbgRender();
+    try {
+      const r = await fetch('/iptv-proxy/playlist.m3u8', { cache: 'no-store' });
+      _dbg.m3u8Raw = r.ok ? await r.text() : `HTTP ${r.status}`;
+    } catch(e) {
+      _dbg.m3u8Raw = 'erreur: ' + e.message;
+    }
+    dbgRender();
+  }
+
+  function dbgCopy() {
+    navigator.clipboard.writeText(dbgText()).then(() => {
+      const btn = document.getElementById('debug-copy');
+      if (btn) { btn.textContent = '✓ Copié !'; setTimeout(() => { btn.textContent = '📋 Copier tout le debug'; }, 1500); }
+    });
+  }
+
+  function dbgToggle() {
+    _dbg.on = !_dbg.on;
+    document.getElementById('debug-panel').classList.toggle('on', _dbg.on);
+    if (_dbg.on) dbgRender();
+  }
+
+  // Polling buffer level toutes les secondes
+  setInterval(() => {
+    const v = document.getElementById('video');
+    if (v.buffered.length && !v.paused) {
+      _dbg.bufferLen = v.buffered.end(v.buffered.length - 1) - v.currentTime;
+      if (_dbg.on) dbgRender();
+    }
+  }, 1000);
+
+  const _favsTwitch = new Set(JSON.parse(localStorage.getItem('twitchoss_favs_twitch') || '[]'));
+  const _favsIptv   = new Set(JSON.parse(localStorage.getItem('twitchoss_favs_iptv')   || '[]'));
+
+  function saveFavs() {
+    localStorage.setItem('twitchoss_favs_twitch', JSON.stringify([..._favsTwitch]));
+    localStorage.setItem('twitchoss_favs_iptv',   JSON.stringify([..._favsIptv]));
+  }
+
+  // ── Indicateur de débit ────────────────────────────
+  function _showSpeedHint(ratio, dl_kbps) {
+    const hint = document.getElementById('info-hint');
+    hint.innerHTML = '';
+    hint.style.color = '';
+    if (ratio === null || ratio === undefined) return;
+    if (ratio >= 1.5) {
+      hint.style.color = '#56d364';
+      hint.textContent = `Débit ok (${ratio}x)`;
+    } else if (ratio >= 0.85) {
+      hint.style.color = '#e3b341';
+      hint.textContent = `Débit juste (${ratio}x) — instabilités possibles`;
+    } else {
+      hint.style.color = '#ff6b6b';
+      const lnk = _currentIptvIdx !== null
+        ? ` <span onclick="findBetterSource()" style="cursor:pointer;text-decoration:underline">chercher d'autres sources</span>`
+        : '';
+      hint.innerHTML = `Serveur trop lent (${ratio}x) —${lnk}`;
+    }
+  }
+
+  async function findBetterSource() {
+    if (_currentIptvIdx === null) return;
+    const ch     = _iptvChannels[_currentIptvIdx];
+    const tvg_id = ch.tvg_id || '';
+    const hint   = document.getElementById('info-hint');
+    if (!tvg_id) {
+      hint.style.color = '#e3b341';
+      hint.textContent = 'Pas de tvg-id — recherche impossible';
+      return;
+    }
+
+    hint.style.color = '#e3b341';
+    hint.textContent = 'Recherche dans la base globale iptv-org…';
+    dbgLog('ok', `find-sources tvg_id=${tvg_id}`);
+
+    try {
+      const r = await fetch(`/find-sources?tvg_id=${encodeURIComponent(tvg_id)}`).then(r => r.json());
+      if (r.error) { hint.textContent = `Erreur: ${r.error}`; return; }
+
+      const extra   = r.sources || [];
+      const current = ch.sources || [];
+      const all     = [...new Set([...current, ...extra])];
+
+      if (all.length <= current.length) {
+        hint.style.color = '#e3b341';
+        hint.textContent = 'Aucune source alternative trouvée';
+        return;
+      }
+
+      dbgLog('ok', `${extra.length} nouvelles sources (total ${all.length})`);
+      hint.textContent = `${extra.length} sources trouvées — speed-test (${all.length} total)…`;
+      showOverlay('loading');
+      document.getElementById('loading-msg').textContent = `Test de ${all.length} sources…`;
+
+      const result = await fetch('/start-iptv', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ sources: all }),
+      }).then(r => r.json());
+
+      _dbg.mode = result.mode ?? '?';
+      dbgLog('ok', `meilleure source: dl=${result.dl_kbps} vid=${result.vid_kbps} ratio=${result.ratio}`);
+      _showSpeedHint(result.ratio, result.dl_kbps);
+
+      if (result.playlist === '/hls/playlist.m3u8') {
+        const ready = await waitForPlaylist('/hls/playlist.m3u8');
+        if (!ready) { showOverlay('error', 'Flux indisponible'); return; }
+      }
+      startHls(result.playlist);
+
+    } catch(e) {
+      hint.style.color = '#ff6b6b';
+      hint.textContent = `Erreur: ${e.message}`;
+    }
+  }
+
+  // ── Tabs & search ──────────────────────────────────
+  function switchTab(tab) {
+    _currentTab  = tab;
+    _searchQuery = '';
+    document.getElementById('search-input').value = '';
+    document.getElementById('tab-twitch').classList.toggle('active', tab === 'twitch');
+    document.getElementById('tab-iptv').classList.toggle('active',   tab === 'iptv');
+    document.getElementById('twitch-list').style.display = tab === 'twitch' ? '' : 'none';
+    document.getElementById('iptv-list').style.display   = tab === 'iptv'   ? '' : 'none';
+  }
+
+  function onSearch(val) {
+    _searchQuery = val.toLowerCase();
+    if (_currentTab === 'twitch') renderTwitchList();
+    else renderIptvList();
+  }
+
+  // ── Render: Twitch ─────────────────────────────────
+  function renderTwitchList() {
+    const q = _searchQuery;
+    const match = ch => !q || ch.toLowerCase().includes(q);
+
+    const favs = _channels.filter(ch => _favsTwitch.has(ch) && match(ch));
+    const rest  = _channels
+      .filter(ch => !_favsTwitch.has(ch) && match(ch))
+      .sort((a, b) => {
+        const diff = (_info[b]?.live ? 1 : 0) - (_info[a]?.live ? 1 : 0);
+        return diff || a.localeCompare(b);
+      });
+
+    const twitchItem = (ch) => {
+      const hue      = [...ch].reduce((a, c) => a + c.charCodeAt(0), 0) % 360;
+      const info     = _info[ch];
+      const isLive   = info?.live ?? false;
+      const isActive = _activeType === 'twitch' && ch === _activeChannel;
+      const isFav    = _favsTwitch.has(ch);
+      const imgTag   = info?.avatar
+        ? `<img src="${info.avatar}" alt="" onerror="this.style.display='none'">`
+        : '';
+      return `<div class="channel-item${isActive ? ' active' : ''}" data-ch="${ch}" onclick="selectChannel('${ch}')">
+        <div class="avatar" style="background:hsl(${hue},60%,45%)">${ch[0].toUpperCase()}${imgTag}</div>
+        <span class="ch-name">${ch}</span>
+        <span class="live-dot${isLive ? ' on' : ''}"></span>
+        <button class="star-btn${isFav ? ' pinned' : ''}"
+          onclick="event.stopPropagation();toggleFavTwitch('${ch}')"
+          title="${isFav ? 'Désépingler' : 'Épingler'}">★</button>
+      </div>`;
+    };
+
+    let html = '';
+    if (favs.length) html += '<div class="section-label">Épinglées</div>' + favs.map(twitchItem).join('');
+    if (rest.length) html += (favs.length ? '<div class="section-label">Autres</div>' : '') + rest.map(twitchItem).join('');
+    document.getElementById('twitch-list').innerHTML = html || '<div class="list-hint">Aucun résultat</div>';
+  }
+
+  // ── Render: IPTV ───────────────────────────────────
+  function _iptvKey(ch) { return ch.sources?.[0] || ch.tvg_id || ch.name; }
+
+  function renderIptvList() {
+    const q = _searchQuery;
+    const match = ch => !q || ch.name.toLowerCase().includes(q);
+
+    const favs = _iptvChannels.filter(ch => _favsIptv.has(_iptvKey(ch)) && match(ch));
+    const rest  = _iptvChannels.filter(ch => !_favsIptv.has(_iptvKey(ch)) && match(ch));
+
+    const iptvItem = (ch) => {
+      const idx      = _iptvChannels.indexOf(ch);
+      const hue      = [...ch.name].reduce((a, c) => a + c.charCodeAt(0), 0) % 360;
+      const isActive = _activeType === 'iptv' && _activeChannel === 'iptv:' + idx;
+      const isFav    = _favsIptv.has(_iptvKey(ch));
+      const imgTag   = ch.logo ? `<img src="${ch.logo}" alt="" onerror="this.style.display='none'">` : '';
+      const first    = (ch.name || '?')[0].toUpperCase();
+      const n        = (ch.sources || []).length;
+      const badge    = n > 1 ? `<span style="font-size:9px;color:var(--text-muted);margin-left:3px">${n}</span>` : '';
+      return `<div class="channel-item${isActive ? ' active' : ''}" data-ch="iptv:${idx}" onclick="selectIptvChannel(${idx})">
+        <div class="avatar" style="background:hsl(${hue},60%,45%)">${first}${imgTag}</div>
+        <span class="ch-name">${ch.name}${badge}</span>
+        <button class="star-btn${isFav ? ' pinned' : ''}"
+          onclick="event.stopPropagation();toggleFavIptv(${idx})"
+          title="${isFav ? 'Désépingler' : 'Épingler'}">&#9733;</button>
+      </div>`;
+    };
+
+    let html = '';
+    if (favs.length) html += '<div class="section-label">Épinglées</div>' + favs.map(iptvItem).join('');
+    if (rest.length) html += (favs.length ? '<div class="section-label">Autres</div>' : '') + rest.map(iptvItem).join('');
+    document.getElementById('iptv-list').innerHTML = html || '<div class="list-hint">Aucun résultat</div>';
+  }
+
+  // ── Favorites ──────────────────────────────────────
+  function toggleFavTwitch(ch) {
+    if (_favsTwitch.has(ch)) _favsTwitch.delete(ch); else _favsTwitch.add(ch);
+    saveFavs();
+    renderTwitchList();
+  }
+
+  function toggleFavIptv(idx) {
+    const key = _iptvKey(_iptvChannels[idx]);
+    if (_favsIptv.has(key)) _favsIptv.delete(key); else _favsIptv.add(key);
+    saveFavs();
+    renderIptvList();
+  }
+
+  // ── Data loading ───────────────────────────────────
+  async function loadChannels() {
+    _channels = await fetch('/channels').then(r => r.json());
+    renderTwitchList();
+    fetchChannelInfo();
+  }
+
+  async function fetchChannelInfo() {
+    try {
+      _info = await fetch('/channel-info').then(r => r.json());
+      renderTwitchList();
+    } catch {}
+    setTimeout(fetchChannelInfo, 120_000);
+  }
+
+  async function loadIptvChannels() {
+    try {
+      _iptvChannels = await fetch('/iptv-channels').then(r => r.json());
+    } catch {
+      _iptvChannels = [];
+    }
+    renderIptvList();
+  }
+
+  // ── Overlays ───────────────────────────────────────
   function showOverlay(name, msg) {
     ['idle', 'loading', 'error'].forEach(id => {
       document.getElementById('overlay-' + id).style.display = id === name ? 'flex' : 'none';
@@ -366,76 +871,85 @@
     v.load();
   }
 
-  function renderChannelList() {
-    const sorted = [..._channels].sort((a, b) => {
-      const la = _info[a]?.live ? 1 : 0;
-      const lb = _info[b]?.live ? 1 : 0;
-      return lb - la;
-    });
-
-    document.getElementById('channel-list').innerHTML = sorted.map(ch => {
-      const hue = [...ch].reduce((a, c) => a + c.charCodeAt(0), 0) % 360;
-      const info = _info[ch];
-      const isLive = info?.live ?? false;
-      const isActive = ch === _activeChannel;
-      const avatarContent = info?.avatar
-        ? `<img src="${info.avatar}" alt="${ch}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;" onerror="this.style.display='none'">`
-        : ch[0].toUpperCase();
-      return `<div class="channel-item${isActive ? ' active' : ''}" data-ch="${ch}" onclick="selectChannel('${ch}')">
-        <div class="avatar" id="av-${ch}" style="background:hsl(${hue},60%,45%)">${avatarContent}</div>
-        <span class="ch-name">${ch}</span>
-        <span class="live-dot${isLive ? ' on' : ''}" id="dot-${ch}"></span>
-      </div>`;
-    }).join('');
+  // ── Chat ───────────────────────────────────────────
+  function setChatMode(mode, channel) {
+    const frame  = document.getElementById('chat-frame');
+    const noChat = document.getElementById('no-chat');
+    if (mode === 'twitch') {
+      frame.src = `https://www.twitch.tv/embed/${channel}/chat?parent=${location.hostname}&darkpopout`;
+      frame.style.display  = '';
+      noChat.style.display = 'none';
+      document.getElementById('btn-popout-chat').dataset.channel = channel;
+    } else {
+      frame.src = '';
+      frame.style.display  = 'none';
+      noChat.style.display = 'flex';
+      document.getElementById('btn-popout-chat').dataset.channel = '';
+    }
   }
 
-  async function loadChannels() {
-    _channels = await fetch('/channels').then(r => r.json());
-    renderChannelList();
-    fetchChannelInfo();
-  }
-
-  async function fetchChannelInfo() {
-    try {
-      _info = await fetch('/channel-info').then(r => r.json());
-      renderChannelList();
-    } catch {}
-    setTimeout(fetchChannelInfo, 120_000);
-  }
-
+  // ── Channel selection ──────────────────────────────
   async function selectChannel(channel) {
     _activeChannel = channel;
-    document.querySelectorAll('.channel-item').forEach(el =>
-      el.classList.toggle('active', el.dataset.ch === channel)
-    );
+    _activeType    = 'twitch';
+    renderTwitchList();
     document.getElementById('info-channel').textContent = channel;
-    document.getElementById('info-hint').textContent = '';
+    document.getElementById('info-hint').textContent    = '';
     setLive(false);
     destroyHls();
     showOverlay('loading');
-
-    document.getElementById('chat-frame').src =
-      `https://www.twitch.tv/embed/${channel}/chat?parent=${location.hostname}&darkpopout`;
-    document.getElementById('btn-popout-chat').dataset.channel = channel;
-
-    // Demarre streamlink + ffmpeg côté serveur
+    setChatMode('twitch', channel);
     await fetch(`/start/${channel}`);
-
-    // Attend que le premier segment HLS soit écrit sur disque
     document.getElementById('loading-msg').textContent = 'Génération du flux HLS…';
-    const ready = await waitForPlaylist();
-    if (!ready) {
-      showOverlay('error', 'Chaîne hors ligne ou timeout');
-      return;
-    }
-
-    startHls();
+    const ready = await waitForPlaylist('/hls/playlist.m3u8');
+    if (!ready) { showOverlay('error', 'Chaîne hors ligne ou timeout'); return; }
+    startHls('/hls/playlist.m3u8');
   }
 
-  async function waitForPlaylist() {
+  async function selectIptvChannel(idx) {
+    const ch = _iptvChannels[idx];
+    _activeChannel  = 'iptv:' + idx;
+    _activeType     = 'iptv';
+    _currentIptvIdx = idx;
+    renderIptvList();
+    document.getElementById('info-channel').textContent = ch.name;
+    document.getElementById('info-hint').textContent    = '';
+    setLive(false);
+    destroyHls();
+    showOverlay('loading');
+    setChatMode('iptv', null);
+    const sources = ch.sources || [];
+    const n = sources.length;
+    document.getElementById('loading-msg').textContent =
+      n > 1 ? `Test des sources (${n})…` : 'Connexion au flux IPTV…';
+
+    const result = await fetch('/start-iptv', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({sources}),
+    }).then(r => r.json());
+
+    _dbg.mode = result.mode ?? '?';
+    const speedInfo = result.dl_kbps
+      ? ` dl=${result.dl_kbps}kbps vid=${result.vid_kbps}kbps ratio=${result.ratio}`
+      : '';
+    dbgLog('ok', `start-iptv mode=${result.mode}${speedInfo}`);
+
+    // Indicateur de débit dans la barre info
+    _showSpeedHint(result.ratio, result.dl_kbps);
+
+    // Pour les sources non-HLS traitées par ffmpeg, attendre que le fichier soit créé
+    if (result.playlist === '/hls/playlist.m3u8') {
+      const ready = await waitForPlaylist('/hls/playlist.m3u8');
+      if (!ready) { showOverlay('error', 'Flux indisponible ou timeout'); return; }
+    }
+    startHls(result.playlist);
+  }
+
+  async function waitForPlaylist(path) {
     for (let i = 0; i < 30; i++) {
       try {
-        const r = await fetch(`${location.origin}/hls/playlist.m3u8`, { cache: 'no-store' });
+        const r = await fetch(`${location.origin}${path}`, { cache: 'no-store' });
         if (r.ok) return true;
       } catch {}
       await new Promise(r => setTimeout(r, 500));
@@ -443,38 +957,76 @@
     return false;
   }
 
-  function startHls() {
+  function startHls(playlist) {
     const video = document.getElementById('video');
-    const src   = `${location.origin}/hls/playlist.m3u8`;
+    const src   = `${location.origin}${playlist}`;
 
+    _dbg.playlist     = playlist;
+    _dbg.segCount     = 0;
+    _dbg.stallCount   = 0;
+    _dbg.waitingCount = 0;
+    _dbg.errorCount   = 0;
+    _dbg.bufferLen    = 0;
+    _dbg.m3u8Raw      = null;
+    _dbg.events       = [];
+    dbgLog('ok', `startHls → ${playlist}`);
+
+    // Événements vidéo natifs
+    const onWaiting = () => { _dbg.waitingCount++; dbgLog('warn', 'video: waiting (rebuffering)'); };
+    const onStalled = () => { _dbg.stallCount++;   dbgLog('err',  'video: stalled'); };
+    const onCanPlay = () => dbgLog('ok',  'video: canplay');
+    const onError   = () => { _dbg.errorCount++;   dbgLog('err',  `video: error ${video.error?.code} ${video.error?.message}`); };
+    video.addEventListener('waiting', onWaiting);
+    video.addEventListener('stalled', onStalled);
+    video.addEventListener('canplay', onCanPlay);
+    video.addEventListener('error',   onError);
+
+    const isIptv = playlist.startsWith('/iptv-proxy');
     if (Hls.isSupported()) {
       hls = new Hls({
-        liveSyncDurationCount:     3,
-        liveMaxLatencyDurationCount: 6,
-        lowLatencyMode:            false,
-        enableWorker:              true,
+        liveSyncDurationCount:       isIptv ? 5  : 3,
+        liveMaxLatencyDurationCount: isIptv ? 12 : 6,
+        maxBufferLength:             isIptv ? 60 : 30,
+        maxMaxBufferLength:          isIptv ? 120 : 60,
+        lowLatencyMode:              false,
+        enableWorker:                true,
       });
-
       hls.loadSource(src);
       hls.attachMedia(video);
 
-      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+      hls.on(Hls.Events.MANIFEST_PARSED, (_, data) => {
+        dbgLog('ok', `manifest OK — niveaux: ${data.levels?.length ?? '?'}`);
         showOverlay('none');
         setLive(true);
-        document.getElementById('info-hint').textContent = '';
-        video.play().catch(() => {});
+        video.play().catch(e => dbgLog('warn', `play() refusé: ${e.message}`));
+      });
+
+      hls.on(Hls.Events.FRAG_LOADED, (_, data) => {
+        _dbg.segCount++;
+        const kb = Math.round((data.frag.stats?.loaded ?? 0) / 1024);
+        const ms = Math.round(data.frag.stats?.loading?.end - data.frag.stats?.loading?.start);
+        dbgLog('ok', `seg #${data.frag.sn} ${kb}KB chargé en ${ms}ms`);
+        dbgRender();
+      });
+
+      hls.on(Hls.Events.FRAG_BUFFERED, (_, data) => {
+        dbgLog('ok', `seg #${data.frag.sn} bufferisé`);
       });
 
       hls.on(Hls.Events.ERROR, (_, data) => {
-        if (data.fatal) {
-          console.error('[hls] fatal error:', data);
-          showOverlay('error', 'Erreur de lecture');
-          setLive(false);
-        }
+        _dbg.errorCount++;
+        const fatal = data.fatal ? '[FATAL]' : '[recov]';
+        dbgLog('err', `${fatal} type=${data.type} detail=${data.details}`);
+        if (data.details === Hls.ErrorDetails.FRAG_LOAD_ERROR || data.details === Hls.ErrorDetails.FRAG_LOAD_TIMEOUT)
+          dbgLog('err', `  → url: ${data.frag?.url ?? '?'}`);
+        if (data.fatal) { showOverlay('error', 'Erreur de lecture'); setLive(false); }
+      });
+
+      hls.on(Hls.Events.BUFFER_STALLED, () => {
+        _dbg.stallCount++; dbgLog('err', 'HLS: buffer stalled');
       });
 
     } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      // Safari
       video.src = src;
       video.addEventListener('loadedmetadata', () => {
         showOverlay('none');
@@ -486,7 +1038,7 @@
     }
   }
 
-  // ── Contrôles ──────────────────────────────────────
+  // ── Controls ───────────────────────────────────────
   function togglePlay() {
     const v = document.getElementById('video');
     if (v.paused) v.play(); else v.pause();
@@ -523,11 +1075,33 @@
   document.addEventListener('keydown', e => {
     if (e.target.tagName === 'INPUT') return;
     const v = document.getElementById('video');
-    if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
-    if (e.code === 'KeyM')  { toggleMute(); }
+    if (e.code === 'Space')     { e.preventDefault(); togglePlay(); }
+    if (e.code === 'KeyM')      { toggleMute(); }
+    if (e.code === 'KeyD')      { dbgToggle(); }
     if (e.code === 'ArrowUp')   { e.preventDefault(); setVolume(Math.min(1, v.volume + 0.1)); }
     if (e.code === 'ArrowDown') { e.preventDefault(); setVolume(Math.max(0, v.volume - 0.1)); }
+    if (e.code === 'KeyF')      { toggleFullscreen(); }
   });
+
+  // ── Fullscreen ─────────────────────────────────────
+  function toggleFullscreen() {
+    const el = document.querySelector('.player-wrapper');
+    const isFs = document.fullscreenElement || document.webkitFullscreenElement;
+    if (isFs) {
+      (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    } else {
+      (el.requestFullscreen || el.webkitRequestFullscreen).call(el);
+    }
+  }
+
+  function updateFsUI() {
+    const isFs = document.fullscreenElement || document.webkitFullscreenElement;
+    document.getElementById('icon-fs-enter').style.display = isFs ? 'none' : '';
+    document.getElementById('icon-fs-exit').style.display  = isFs ? ''     : 'none';
+  }
+
+  document.addEventListener('fullscreenchange',       updateFsUI);
+  document.addEventListener('webkitfullscreenchange', updateFsUI);
 
   function popoutChat() {
     const ch = document.getElementById('btn-popout-chat').dataset.channel;
@@ -536,6 +1110,7 @@
 
   // ───────────────────────────────────────────────────
   loadChannels();
+  loadIptvChannels();
   showOverlay('idle');
 </script>
 </body>
