@@ -54,6 +54,28 @@ hls.js (lowLatencyMode, liveSyncDurationCount=2, maxLiveSyncPlaybackRate=1.5)
 
 **Pipelines simultanés** : chaque chaîne active a son propre dossier `hls/<channel>/` et ses propres processus streamlink+ffmpeg. Un thread de nettoyage kill les pipelines inactifs depuis 60s.
 
+## Direct TV français (feeder maison) 📡
+
+Pour regarder les chaînes TV françaises en direct (matchs, etc.) **sans compte ni pub plateforme**, et partager le direct avec des potes.
+
+Les CDN officiels (TF1, france.tv…) et YouTube bloquent les **IP de datacenter** : un VPS se fait refuser ces flux quel que soit son pays. La parade : un **PC à la maison** (IP résidentielle, non bloquée) capte la chaîne via Streamlink et **pousse le flux au VPS en SRT** ; le VPS ne fait que rediffuser.
+
+```
+PC maison (France)              VPS (rediffuseur)              Potes
+streamlink TF1 (sans compte)
+  → ffmpeg → push SRT  ───────►  ffmpeg écoute SRT :9000
+                                   → hls/ → Flask  ───────►  bouton "📡 direct maison"
+```
+
+**En bref :**
+- Côté PC : `feeder.bat` (Windows) ou `feeder.sh` (Linux/Mac) — TF1 par défaut, ou passer une URL : `feeder.bat "https://www.france.tv/france-2/direct.html"`. Prérequis : `streamlink` + `ffmpeg` dans le PATH.
+- Côté VPS : route `POST /start-feed` (récepteur SRT sur **UDP 9000**) — déjà déployée.
+- Côté potes : ouvrir le site → bouton **« 📡 Regarder le direct maison »**.
+
+Chaînes sans compte : TF1/TMC/TFX/LCI (plugin `tf1`), France 2/3/4/5 (plugin `pluzz`). Pas de M6/6play.
+
+👉 **Détails, transport SRT, dépannage : voir [FEEDER.md](FEEDER.md).**
+
 ## Déploiement VPS (recommandé)
 
 ### Prérequis
@@ -145,11 +167,14 @@ Ou utilise le champ `+` en bas de la sidebar directement dans l'interface.
 
 ```
 twitchoss/
-├── server.py           # Serveur Flask + pipelines streamlink/ffmpeg (multi-channel)
+├── server.py           # Serveur Flask + pipelines streamlink/ffmpeg (Twitch, IPTV, feed SRT)
 ├── index.html          # Interface web complète
 ├── channels.txt        # Liste des chaînes à suivre
 ├── twitchoss.service   # Unit systemd pour déploiement VPS
 ├── start.bat           # Lanceur Windows
+├── feeder.bat          # Feeder maison (Windows) — push SRT vers le VPS
+├── feeder.sh           # Feeder maison (Linux/Mac)
+├── FEEDER.md           # Doc du direct TV français via feeder maison
 └── hls/                # Segments HLS temporaires par chaîne (généré au runtime)
     └── <channel>/
         ├── playlist.m3u8
