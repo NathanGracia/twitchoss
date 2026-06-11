@@ -38,15 +38,18 @@ ffmpeg -c copy -f mpegts
 
 - **Transport** : SRT sur **UDP 9000** (ffmpeg côté VPS compilé avec `libsrt`). SRT
   encaisse la gigue réseau bien mieux que du TCP brut.
-- **Latence** : ~10-15 s entre le PC et l'affichage chez les potes (`latency=3000`
-  SRT + buffer HLS). Normal.
+- **Latence SRT** : le feeder pousse avec `latency=3000`, le VPS écoute avec
+  `latency=6000` ; SRT négocie le **max des deux côtés**, donc 6 s effectives
+  (montées de 3 s à 6 s pour absorber les freezes/artefacts côté viewers).
+- **Latence totale** : ~15-20 s entre le PC et l'affichage chez les potes
+  (latence SRT + buffer HLS). Normal.
 
 ## Côté VPS
 
 Déjà en place dans `server.py` :
 
 - Constante `SRT_PORT = 9000`.
-- Route `POST /start-feed` : lance `ffmpeg -i srt://0.0.0.0:9000?mode=listener&latency=3000
+- Route `POST /start-feed` : lance `ffmpeg -i srt://0.0.0.0:9000?mode=listener&latency=6000
   -c copy -f hls …`. ffmpeg bloque jusqu'à ce que le feeder se connecte, puis écrit les
   segments dans `hls/`.
 
@@ -115,4 +118,5 @@ Ouvrir `https://twitchoss.nathangracia.com` → cliquer **📡 Regarder le direc
 - **« Pas de direct maison en ce moment »** : le feeder n'est pas (encore) connecté, ou
   ffmpeg n'a pas fini de remplir le premier segment (~10 s). Relancer le feeder.
 - **Saccades** : la connexion montante du PC maison est insuffisante pour le débit de la
-  chaîne. Augmenter `latency` (ex. `latency=5000`) ou choisir une qualité plus basse.
+  chaîne. Augmenter `latency` côté feeder **au-delà de 6000** (SRT prend le max des deux
+  côtés, donc en dessous ça ne change rien) ou choisir une qualité plus basse.

@@ -1,82 +1,68 @@
 # TwitchOSS
 
-Interface web pour regarder Twitch sans publicités, avec chat intégré. Déployable en local ou sur VPS.
+Interface web pour regarder Twitch sans publicités (avec chat intégré), les chaînes TV via IPTV, et un « direct maison » poussé depuis un PC en France. Déployé sur VPS derrière Nginx.
 
-![Stack](https://img.shields.io/badge/Python-Flask-blue) ![Stack](https://img.shields.io/badge/Streamlink-8.x-purple) ![Stack](https://img.shields.io/badge/ffmpeg-HLS-orange)
+![Stack](https://img.shields.io/badge/Python-Flask-blue) ![Stack](https://img.shields.io/badge/Streamlink-purple) ![Stack](https://img.shields.io/badge/ffmpeg-HLS-orange)
 
 ## Fonctionnalités
 
-- Lecture des streams Twitch sans pubs via Streamlink
-- **Multi-channel** : plusieurs utilisateurs peuvent regarder des chaînes différentes simultanément, chaque chaîne a son propre pipeline
-- Interface reproduisant l'expérience Twitch (sidebar, vidéo, chat)
-- Chat Twitch intégré (embed officiel) + bouton pour ouvrir en popup (compatibilité 7TV/BTTV/FFZ)
-- **Sidebar** : statut live, viewers, jeu en cours, photo de profil, titre du stream dans l'info bar
-- **Ajout de chaînes** depuis l'interface (champ `+` en bas de la sidebar)
-- **URL avec hash** pour partager une chaîne (`/#squeezie`) — le stream se lance automatiquement
-- **Clic molette** sur une chaîne → ouvre dans un nouvel onglet
-- **Titre de l'onglet** mis à jour avec le nom de la chaîne
-- **Volume persistant** en localStorage (survit aux rechargements)
-- **Overlay pause** : fond semi-transparent + icône pause quand la vidéo est en pause
-- **Bouton SYNC** : apparaît si le player décroche de +8s du live edge, un clic resynchronise
-- Raccourcis clavier : `Espace` play/pause, `M` mute, `↑/↓` volume
-- Favicon
+- **Twitch sans pubs** : streamlink extrait le flux, ffmpeg le repackage en HLS local
+- **Chaînes TV (IPTV)** : sources publiques iptv-org (FR/DE/AT), avec speed-test automatique des sources multiples et recherche d'alternatives dans la base globale si le débit est insuffisant
+- **📡 Direct maison** : un PC en France pousse une chaîne TV en SRT au VPS, qui la rediffuse à tout le monde (voir [FEEDER.md](FEEDER.md))
+- **Sidebar** : onglets Twitch / Chaînes TV, recherche, favoris épinglés (localStorage), statut live + avatars (API GQL Twitch)
+- **Chat Twitch** intégré (embed officiel) + bouton popout (compatibilité 7TV/BTTV/FFZ)
+- **Panneau debug** (touche `D`) : mode, buffer, segments, stalls, m3u8 brut, copie en un clic
+- Raccourcis clavier : `Espace` play/pause, `M` mute, `↑/↓` volume, `F` plein écran, `D` debug
+
+> ⚠️ **Un seul flux actif à la fois** : le serveur n'a qu'un pipeline ffmpeg. Lancer une chaîne coupe celle en cours pour tout le monde. C'est pensé pour un petit groupe qui regarde la même chose (le bouton « direct maison », lui, ne redémarre rien : il rejoint le flux en cours).
 
 ## Stack technique
 
 | Composant | Rôle |
 |-----------|------|
-| **Streamlink** | Extrait le flux Twitch (sans pubs, low latency, qualité max 60fps) |
-| **ffmpeg** | Repackage le flux MPEG-TS en segments HLS sur disque |
-| **Flask** | Serveur qui orchestre tout et sert l'interface |
+| **Streamlink** | Extrait le flux Twitch (sans pubs) — aussi utilisé côté feeder maison |
+| **ffmpeg** | Repackage tout (Twitch, IPTV, SRT) en segments HLS sur disque |
+| **Flask** | Orchestration + sert l'interface et les segments |
 | **hls.js** | Lecture des segments HLS dans le navigateur |
-| **Twitch GQL API** | Statut live, viewers, jeu, titre, photos de profil |
+| **Twitch GQL API** | Statut live + photos de profil de la sidebar |
 
 ## Architecture
 
-```
-Twitch CDN
-    │
-    ▼
-Streamlink --twitch-low-latency --hls-live-edge 2 (stdout)
-    │
-    ▼ pipe
-ffmpeg -fflags nobuffer+genpts+discardcorrupt -avoid_negative_ts make_zero
-    │
-    ▼
-hls/<channel>/playlist.m3u8 + seg*.ts  (rolling 3 segments × ~2s)
-    │
-    ▼
-Flask /hls/<channel>/<file>
-    │
-    ▼
-hls.js (lowLatencyMode, liveSyncDurationCount=2, maxLiveSyncPlaybackRate=1.5)
-```
-
-**Pipelines simultanés** : chaque chaîne active a son propre dossier `hls/<channel>/` et ses propres processus streamlink+ffmpeg. Un thread de nettoyage kill les pipelines inactifs depuis 60s.
-
-## Direct TV français (feeder maison) 📡
-
-Pour regarder les chaînes TV françaises en direct (matchs, etc.) **sans compte ni pub plateforme**, et partager le direct avec des potes.
-
-Les CDN officiels (TF1, france.tv…) et YouTube bloquent les **IP de datacenter** : un VPS se fait refuser ces flux quel que soit son pays. La parade : un **PC à la maison** (IP résidentielle, non bloquée) capte la chaîne via Streamlink et **pousse le flux au VPS en SRT** ; le VPS ne fait que rediffuser.
+Trois sources possibles, un seul pipeline de sortie :
 
 ```
-PC maison (France)              VPS (rediffuseur)              Potes
-streamlink TF1 (sans compte)
-  → ffmpeg → push SRT  ───────►  ffmpeg écoute SRT :9000
-                                   → hls/ → Flask  ───────►  bouton "📡 direct maison"
+Twitch:   streamlink --stdout twitch.tv/<ch> ──pipe──► ffmpeg -c copy
+IPTV:     ffmpeg -user_agent <UA navigateur> -i <meilleure source>   ─┐
+Feeder:   PC maison ──SRT (UDP 9000)──► ffmpeg en écoute             ─┤
+                                                                      ▼
+                                              hls/playlist.m3u8 + seg*.ts
+                                              (rolling 6 segments)
+                                                                      ▼
+                                              Flask /hls/* ──► hls.js
 ```
 
-**En bref :**
-- Côté PC : `feeder.bat` (Windows) ou `feeder.sh` (Linux/Mac) — TF1 par défaut, ou passer une URL : `feeder.bat "https://www.france.tv/france-2/direct.html"`. Prérequis : `streamlink` + `ffmpeg` dans le PATH.
-- Côté VPS : route `POST /start-feed` (récepteur SRT sur **UDP 9000**) — déjà déployée.
-- Côté potes : ouvrir le site → bouton **« 📡 Regarder le direct maison »**.
+Points importants (appris à la dure) :
 
-Chaînes sans compte : TF1/TMC/TFX/LCI (plugin `tf1`), France 2/3/4/5 (plugin `pluzz`). Pas de M6/6play.
+- **Tout passe par ffmpeg → disque.** Un proxy HTTP temps réel (re-télécharger chaque segment à la demande) causait des rebufferings ; ffmpeg pré-télécharge en continu et le navigateur lit en local.
+- **User-Agent navigateur obligatoire** pour l'IPTV : certains relais renvoient une playlist vide à l'UA par défaut de ffmpeg.
+- **Les CDN officiels (TF1, france.tv…) bloquent les IP datacenter**, d'où le feeder maison — détails dans [FEEDER.md](FEEDER.md).
 
-👉 **Détails, transport SRT, dépannage : voir [FEEDER.md](FEEDER.md).**
+## Endpoints
 
-## Déploiement VPS (recommandé)
+| Route | Rôle |
+|-------|------|
+| `GET /` | Interface web |
+| `GET /channels` | Liste des chaînes Twitch (`channels.txt`) |
+| `GET /channel-info` | Statut live + avatars (GQL) |
+| `GET /start/<channel>` | Lance le pipeline Twitch |
+| `GET /iptv-channels` | Chaînes IPTV iptv-org FR/DE/AT (cache 1 h) |
+| `GET\|POST /start-iptv` | Lance le pipeline IPTV (`?url=` ou JSON `{sources: [...]}` → speed-test) |
+| `GET /find-sources` | Cherche d'autres sources d'une chaîne dans la base globale iptv-org |
+| `GET\|POST /start-feed` | Met ffmpeg en écoute SRT (UDP 9000) pour le feeder maison |
+| `GET /hls/<file>` | Playlist + segments HLS |
+| `GET /debug-info` | État des processus + fichiers HLS |
+
+## Déploiement VPS
 
 ### Prérequis
 
@@ -123,12 +109,11 @@ sudo certbot --nginx -d twitchoss.ton-domaine.com
 ```
 
 > Le chat Twitch embed requiert HTTPS + un domaine (pas une IP brute).
+> Pour le feeder maison, l'**UDP 9000** doit être joignable depuis l'extérieur.
 
 ## Installation locale (Windows)
 
-### Prérequis
-
-Python 3.11+, [Streamlink](https://streamlink.github.io/) 8.x, [ffmpeg](https://ffmpeg.org/) dans le PATH.
+Python 3.11+, [Streamlink](https://streamlink.github.io/) et [ffmpeg](https://ffmpeg.org/) dans le PATH.
 
 ```bash
 pip install flask requests streamlink
@@ -142,7 +127,9 @@ STREAMLINK = r"C:\...\Scripts\streamlink.exe"
 
 Lancer avec `start.bat`.
 
-## Configuration des chaînes
+Alternative sans serveur : `watch.bat` / `watch.ps1` ouvrent directement une chaîne de `channels.txt` dans VLC via streamlink (menu interactif, chat en popup optionnel).
+
+## Configuration des chaînes Twitch
 
 Édite `channels.txt` — une chaîne par ligne, sans `twitch.tv/` :
 
@@ -153,30 +140,31 @@ mistermv
 zerator
 ```
 
-Ou utilise le champ `+` en bas de la sidebar directement dans l'interface.
+## Tests
 
-## Notes
+`test_sim.py` simule un navigateur (hls.js) contre un serveur qui tourne :
 
-- Qualité sélectionnée : `1080p60 > 720p60 > best`
-- Les segments HLS sont recréés à chaque nouveau pipeline (`hls/<channel>/` réinitialisé)
-- Le statut live/viewers/jeu/titre se rafraîchit toutes les 2 minutes
-- Pour les emotes 7TV : ouvrir le chat en popup via le bouton ↗ (les iframes Twitch bloquent l'injection des extensions)
-- Le désync son/image se corrige avec le bouton **SYNC** dans l'info bar
+```bash
+python test_sim.py     # cible http://localhost:5000
+```
+
+> Attention : il lance de vrais pipelines IPTV, donc il coupe un éventuel flux en cours et laisse un ffmpeg actif à la fin.
 
 ## Fichiers
 
 ```
 twitchoss/
-├── server.py           # Serveur Flask + pipelines streamlink/ffmpeg (Twitch, IPTV, feed SRT)
-├── index.html          # Interface web complète
-├── channels.txt        # Liste des chaînes à suivre
-├── twitchoss.service   # Unit systemd pour déploiement VPS
-├── start.bat           # Lanceur Windows
-├── feeder.bat          # Feeder maison (Windows) — push SRT vers le VPS
-├── feeder.sh           # Feeder maison (Linux/Mac)
-├── FEEDER.md           # Doc du direct TV français via feeder maison
-└── hls/                # Segments HLS temporaires par chaîne (généré au runtime)
-    └── <channel>/
-        ├── playlist.m3u8
-        └── seg*.ts
+├── server.py           # Serveur Flask + pipelines ffmpeg (Twitch, IPTV, feed SRT)
+├── index.html          # Interface web complète (CSS + JS inclus)
+├── channels.txt        # Chaînes Twitch de la sidebar
+├── twitchoss.service   # Unit systemd pour le VPS
+├── feeder.sh / .bat    # Feeder maison — push SRT vers le VPS (voir FEEDER.md)
+├── FEEDER.md           # Doc du direct TV via feeder maison
+├── start.bat           # Lance le serveur en local (Windows)
+├── watch.bat / .ps1    # Lecture directe streamlink → VLC (Windows, sans serveur)
+├── test_sim.py         # Tests end-to-end contre un serveur lancé
+├── CONTEXT.md          # Note de passation entre machines (dernière modif + action requise)
+└── hls/                # Segments HLS (généré au runtime, ignoré par git)
+    ├── playlist.m3u8
+    └── seg*.ts
 ```

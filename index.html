@@ -627,7 +627,7 @@
     _dbg.m3u8Raw = 'chargement…';
     dbgRender();
     try {
-      const r = await fetch('/iptv-proxy/playlist.m3u8', { cache: 'no-store' });
+      const r = await fetch('/hls/playlist.m3u8', { cache: 'no-store' });
       _dbg.m3u8Raw = r.ok ? await r.text() : `HTTP ${r.status}`;
     } catch(e) {
       _dbg.m3u8Raw = 'erreur: ' + e.message;
@@ -724,6 +724,7 @@
         body:    JSON.stringify({ sources: all }),
       }).then(r => r.json());
 
+      if (!result.ok) { showOverlay('error', result.error || 'Flux indisponible'); return; }
       _dbg.mode = result.mode ?? '?';
       dbgLog('ok', `meilleure source: dl=${result.dl_kbps} vid=${result.vid_kbps} ratio=${result.ratio}`);
       if (result.dl_kbps) {
@@ -739,26 +740,8 @@
         return;
       }
 
-      if (result.playlist === '/hls/playlist.m3u8') {
-        const ready = await waitForPlaylist('/hls/playlist.m3u8');
-        if (!ready) { showOverlay('error', 'Flux indisponible'); return; }
-      } else if (result.mode === 'proxy') {
-        document.getElementById('loading-msg').textContent = 'Vérification de la source…';
-        dbgLog('ok', 'preflight /iptv-proxy/playlist.m3u8');
-        try {
-          const probe = await fetch('/iptv-proxy/playlist.m3u8', {cache: 'no-store'});
-          if (!probe.ok) {
-            dbgLog('err', `preflight HTTP ${probe.status}`);
-            showOverlay('error', `Source IPTV indisponible (HTTP ${probe.status})`);
-            return;
-          }
-          dbgLog('ok', `preflight OK HTTP ${probe.status}`);
-        } catch(e) {
-          dbgLog('err', `preflight erreur réseau: ${e.message}`);
-          showOverlay('error', 'Erreur réseau (source inaccessible)');
-          return;
-        }
-      }
+      const ready = await waitForPlaylist(result.playlist);
+      if (!ready) { showOverlay('error', 'Flux indisponible'); return; }
       startHls(result.playlist);
 
     } catch(e) {
@@ -990,6 +973,7 @@
       body: JSON.stringify({sources}),
     }).then(r => r.json());
 
+    if (!result.ok) { showOverlay('error', result.error || 'Flux indisponible'); return; }
     _dbg.mode = result.mode ?? '?';
     const speedInfo = result.dl_kbps
       ? ` dl=${result.dl_kbps}kbps vid=${result.vid_kbps}kbps ratio=${result.ratio}`
@@ -1012,27 +996,9 @@
       return;
     }
 
-    // Pour les sources non-HLS traitées par ffmpeg, attendre que le fichier soit créé
-    if (result.playlist === '/hls/playlist.m3u8') {
-      const ready = await waitForPlaylist('/hls/playlist.m3u8');
-      if (!ready) { showOverlay('error', 'Flux indisponible ou timeout'); return; }
-    } else if (result.mode === 'proxy') {
-      document.getElementById('loading-msg').textContent = 'Vérification de la source…';
-      dbgLog('ok', 'preflight /iptv-proxy/playlist.m3u8');
-      try {
-        const probe = await fetch('/iptv-proxy/playlist.m3u8', {cache: 'no-store'});
-        if (!probe.ok) {
-          dbgLog('err', `preflight HTTP ${probe.status}`);
-          showOverlay('error', `Source IPTV indisponible (HTTP ${probe.status})`);
-          return;
-        }
-        dbgLog('ok', `preflight OK HTTP ${probe.status}`);
-      } catch(e) {
-        dbgLog('err', `preflight erreur réseau: ${e.message}`);
-        showOverlay('error', 'Erreur réseau (source inaccessible)');
-        return;
-      }
-    }
+    // ffmpeg doit écrire le premier segment avant que la playlist existe
+    const ready = await waitForPlaylist(result.playlist);
+    if (!ready) { showOverlay('error', 'Flux indisponible ou timeout'); return; }
     startHls(result.playlist);
   }
 
@@ -1075,13 +1041,12 @@
     video.addEventListener('canplay', onCanPlay);
     video.addEventListener('error',   onError);
 
-    const isIptv = playlist.startsWith('/iptv-proxy');
     if (Hls.isSupported()) {
       hls = new Hls({
-        liveSyncDurationCount:       isIptv ? 5  : 3,
-        liveMaxLatencyDurationCount: isIptv ? 12 : 6,
-        maxBufferLength:             isIptv ? 60 : 30,
-        maxMaxBufferLength:          isIptv ? 120 : 60,
+        liveSyncDurationCount:       3,
+        liveMaxLatencyDurationCount: 6,
+        maxBufferLength:             30,
+        maxMaxBufferLength:          60,
         lowLatencyMode:              false,
         enableWorker:                true,
       });

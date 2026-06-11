@@ -1,5 +1,5 @@
-from flask import Flask, jsonify, send_file, send_from_directory, request as freq, make_response, Response
-import subprocess, threading, os, atexit, shutil, time, urllib.parse, traceback, concurrent.futures, unicodedata, re
+from flask import Flask, jsonify, send_file, send_from_directory, request as freq
+import subprocess, threading, os, atexit, shutil, time, urllib.parse, concurrent.futures, unicodedata
 from pathlib import Path
 
 app = Flask(__name__)
@@ -19,7 +19,6 @@ _channels_cache: dict  = {"channels": None, "ts": 0.0}
 IPTV_CACHE_TTL     = 3600
 STREAMS_CACHE_TTL  = 7200
 CHANNELS_CACHE_TTL = 7200
-_iptv_proxy_url: str | None = None
 
 # User-Agent navigateur partagé pour toutes les requêtes IPTV (test de débit + ffmpeg).
 # Certains relais bloquent les UA "VLC"/ffmpeg par défaut.
@@ -218,9 +217,8 @@ def start(channel):
 
 @app.route("/start-feed", methods=["GET", "POST"])
 def start_feed():
-    global _sl_proc, _ff_proc, _iptv_proxy_url
+    global _sl_proc, _ff_proc
     log("FEED", f"écoute SRT sur :{SRT_PORT}, attente du feeder maison…")
-    _iptv_proxy_url = None
     _kill_all()
     _reset_hls()
 
@@ -378,7 +376,7 @@ def _best_source(sources):
 
 @app.route("/start-iptv", methods=["GET", "POST"])
 def start_iptv():
-    global _ff_proc, _sl_proc, _iptv_proxy_url
+    global _ff_proc, _sl_proc
 
     # Accepte GET (url=) ou POST JSON (sources=[...])
     if freq.is_json:
@@ -401,10 +399,9 @@ def start_iptv():
 
     log("IPTV-START", f"url={stream_url}  is_hls={is_hls}  dl={dl_kbps:.0f} vid={vid_kbps:.0f}")
 
-    # Tout passe par ffmpeg (HLS et RTMP) — le proxy Flask causait des rebufferings
-    # car chaque segment était téléchargé en double-hop en temps réel.
-    # ffmpeg pré-télécharge et écrit les segments sur disque ; le browser les lit localement.
-    _iptv_proxy_url = None
+    # Tout passe par ffmpeg (HLS et RTMP) — un proxy Flask en temps réel causait des
+    # rebufferings (double-hop par segment). ffmpeg pré-télécharge et écrit les
+    # segments sur disque ; le browser les lit localement.
     _kill_all()
     _reset_hls()
     log("IPTV-START", f"-> mode FFMPEG (is_hls={is_hls})")
@@ -446,91 +443,6 @@ def start_iptv():
         "dl_kbps": round(dl_kbps), "vid_kbps": round(vid_kbps),
         "ratio": round(ratio, 2) if ratio else None,
     })
-
-
-# ── IPTV proxy ────────────────────────────────────────────────────────────────
-
-@app.route("/iptv-proxy/playlist.m3u8")
-def iptv_proxy_playlist():
-    import requests as req
-    t0 = time.time()
-    url = freq.args.get("url", _iptv_proxy_url or "").strip()
-    if not url:
-        return "No stream", 404
-
-    log("PROXY-M3U8", f"fetch {url}")
-    try:
-        r = req.get(url, timeout=6, headers={"User-Agent": IPTV_UA})
-        r.raise_for_status()
-        dt = time.time() - t0
-        log("PROXY-M3U8", f"OK {r.status_code} en {dt*1000:.0f}ms  {len(r.text)} chars")
-
-        def _proxy_uri(m):
-            """Réécrit URI="..." dans les tags #EXT-X-MEDIA, #EXT-X-KEY, etc."""
-            raw = m.group(1)
-            abs_uri = urllib.parse.urljoin(url, raw)
-            proxy = f"/iptv-proxy/playlist.m3u8?url={urllib.parse.quote(abs_uri, safe='')}"
-            return f'URI="{proxy}"'
-
-        lines = []
-        seg_count = 0
-        for line in r.text.splitlines():
-            stripped = line.strip()
-            if stripped and not stripped.startswith("#"):
-                abs_url = urllib.parse.urljoin(url, stripped)
-                if abs_url.split("?")[0].lower().endswith(".m3u8"):
-                    line = f"/iptv-proxy/playlist.m3u8?url={urllib.parse.quote(abs_url, safe='')}"
-                else:
-                    line = f"/iptv-proxy/seg?url={urllib.parse.quote(abs_url, safe='')}"
-                    seg_count += 1
-            elif stripped.startswith(("#EXT-X-MEDIA", "#EXT-X-KEY", "#EXT-X-SESSION-DATA")):
-                line = re.sub(r'URI="([^"]+)"', _proxy_uri, line)
-            lines.append(line)
-
-        log("PROXY-M3U8", f"{seg_count} segments réécrits")
-        resp = make_response("\n".join(lines))
-        resp.headers["Content-Type"] = "application/x-mpegURL"
-        resp.headers["Cache-Control"] = "no-cache, no-store"
-        return resp
-
-    except Exception as e:
-        log("PROXY-M3U8", f"ERREUR {type(e).__name__}: {e}  url={url[-80:]}")
-        traceback.print_exc()
-        return str(e), 502
-
-
-@app.route("/iptv-proxy/seg")
-def iptv_proxy_seg():
-    import requests as req
-    t0 = time.time()
-    seg_url = freq.args.get("url", "").strip()
-    if not seg_url.startswith(("http://", "https://")):
-        return "Bad URL", 400
-
-    short = seg_url.split("/")[-1][:40]
-    log("PROXY-SEG", f"fetch {short}")
-    try:
-        r = req.get(seg_url, stream=True, timeout=30, headers={"User-Agent": IPTV_UA})
-        r.raise_for_status()
-        ct      = r.headers.get("content-type", "video/MP2T")
-        cl      = r.headers.get("content-length")
-        log("PROXY-SEG", f"→ connexion OK {cl or '?'}B prévus, streaming…")
-
-        def generate():
-            total = 0
-            for chunk in r.iter_content(32768):
-                total += len(chunk)
-                yield chunk
-            dt = time.time() - t0
-            log("PROXY-SEG", f"OK {total//1024}KB en {dt*1000:.0f}ms ({total*8//max(1,int(dt*1000))} kbps)")
-
-        headers = {"Content-Type": ct, "Cache-Control": "no-cache"}
-        if cl:
-            headers["Content-Length"] = cl
-        return Response(generate(), headers=headers)
-    except Exception as e:
-        log("PROXY-SEG", f"ERREUR: {e}")
-        return "Error", 502
 
 
 # ── Debug endpoint ────────────────────────────────────────────────────────────
@@ -613,7 +525,6 @@ def debug_info():
         "streamlink_alive": sl_alive,
         "ffmpeg_alive":     ff_alive,
         "ffmpeg_exit_code": ff_code,
-        "proxy_url":        _iptv_proxy_url,
         "hls_files":        [f.name for f in hls_files],
     })
 

@@ -91,22 +91,18 @@ def t_iptv_channels():
     d = r.json()
     assert isinstance(d, list) and len(d) > 0, "liste vide"
     ch = d[0]
-    assert "name" in ch,    "champ 'name' manquant"
-    assert "logo" in ch,    "champ 'logo' manquant"
-    # Nouvelle structure : sources[] au lieu de url
-    has_sources = "sources" in ch and isinstance(ch["sources"], list)
-    has_url     = "url" in ch  # ancienne structure (serveur pas encore redemarré)
-    assert has_sources or has_url, "ni 'sources' ni 'url' present"
+    assert "name" in ch, "champ 'name' manquant"
+    assert "logo" in ch, "champ 'logo' manquant"
+    assert isinstance(ch.get("sources"), list), "champ 'sources' manquant"
     multi = sum(1 for c in d if len(c.get("sources", [])) > 1)
-    ex_src = ch.get("sources", [ch.get("url", "?")])
-    print(f"         -> {len(d)} chaines IPTV ({multi} multi-sources), ex: {ch['name']} [{len(ex_src)} source(s)]")
+    print(f"         -> {len(d)} chaines IPTV ({multi} multi-sources), ex: {ch['name']} [{len(ch['sources'])} source(s)]")
 check("GET /iptv-channels -> liste non-vide", t_iptv_channels)
 
 def t_debug_info():
     r = requests.get(f"{BASE}/debug-info", timeout=TIMEOUT)
     assert r.status_code == 200
     d = r.json()
-    for k in ["streamlink_alive", "ffmpeg_alive", "ffmpeg_exit_code", "proxy_url", "hls_files"]:
+    for k in ["streamlink_alive", "ffmpeg_alive", "ffmpeg_exit_code", "hls_files"]:
         assert k in d, f"champ '{k}' manquant"
     print(f"         -> {d}")
 check("GET /debug-info -> etat serveur", t_debug_info)
@@ -121,14 +117,8 @@ def t_invalid_url():
         assert r.json().get("ok") == False, f"URL '{bad}' non rejetee"
 check("URLs invalides rejetees par /start-iptv", t_invalid_url)
 
-def t_seg_bad_url():
-    for bad in ["file:///etc/passwd", "ftp://x"]:
-        r = requests.get(f"{BASE}/iptv-proxy/seg?url={requests.utils.quote(bad)}", timeout=TIMEOUT)
-        assert r.status_code in (400, 404), f"URL '{bad}' -> HTTP {r.status_code} (attendu 400/404)"
-check("URLs invalides rejetees par /iptv-proxy/seg", t_seg_bad_url)
-
-# ── 4. Simulation flux IPTV (mode proxy) ─────────────────────────────────────
-print("\n[4] Simulation HLS.js - flux IPTV proxy")
+# ── 4. Simulation flux IPTV (ffmpeg -> HLS local) ────────────────────────────
+print("\n[4] Simulation HLS.js - flux IPTV via ffmpeg")
 
 TEST_URL = "http://69.64.57.208/france2/mono.m3u8"
 
@@ -136,11 +126,11 @@ def t_start_iptv_get():
     r = requests.get(f"{BASE}/start-iptv?url={requests.utils.quote(TEST_URL)}", timeout=TIMEOUT)
     assert r.status_code == 200
     d = r.json()
-    assert d.get("ok")       == True,                        f"ok=False"
-    assert d.get("mode")     == "proxy",                     f"mode={d.get('mode')} (attendu proxy)"
-    assert d.get("playlist") == "/iptv-proxy/playlist.m3u8", f"playlist={d.get('playlist')}"
+    assert d.get("ok")       == True,                  f"ok=False"
+    assert d.get("mode")     == "ffmpeg",              f"mode={d.get('mode')} (attendu ffmpeg)"
+    assert d.get("playlist") == "/hls/playlist.m3u8",  f"playlist={d.get('playlist')}"
     print(f"         -> GET: mode={d['mode']} dl={d.get('dl_kbps')} vid={d.get('vid_kbps')} ratio={d.get('ratio')}")
-check("start-iptv GET -> mode proxy pour .m3u8", t_start_iptv_get)
+check("start-iptv GET -> mode ffmpeg + playlist HLS locale", t_start_iptv_get)
 
 def t_start_iptv_post_multi():
     # POST avec plusieurs sources (dont une invalide pour tester le filtrage)
@@ -148,11 +138,11 @@ def t_start_iptv_post_multi():
     r = requests.post(f"{BASE}/start-iptv", json=payload, timeout=30)
     assert r.status_code == 200
     d = r.json()
-    assert d.get("ok")   == True,    f"ok=False"
-    assert d.get("mode") == "proxy", f"mode={d.get('mode')}"
-    assert "dl_kbps"  in d,          "dl_kbps absent de la reponse"
-    assert "vid_kbps" in d,          "vid_kbps absent"
-    assert "ratio"    in d,          "ratio absent"
+    assert d.get("ok")   == True,     f"ok=False"
+    assert d.get("mode") == "ffmpeg", f"mode={d.get('mode')}"
+    assert "dl_kbps"  in d,           "dl_kbps absent de la reponse"
+    assert "vid_kbps" in d,           "vid_kbps absent"
+    assert "ratio"    in d,           "ratio absent"
     r_val = d.get("ratio")
     if r_val and r_val < 0.85:
         print(f"         -> ratio={r_val} (serveur lent - avertissement UI attendu)")
@@ -171,64 +161,53 @@ check("start-iptv POST toutes invalides -> ok=False", t_start_iptv_post_all_inva
 raw_m3u8 = None
 seg_urls = []
 
-def t_proxy_playlist():
+def t_hls_playlist():
+    """Attend que ffmpeg ecrive le premier segment (comme waitForPlaylist cote JS)."""
     global raw_m3u8, seg_urls
-    r = requests.get(f"{BASE}/iptv-proxy/playlist.m3u8", timeout=TIMEOUT)
-    assert r.status_code == 200, f"HTTP {r.status_code}"
-    ct = r.headers.get("Content-Type", "")
-    assert "mpegurl" in ct.lower() or "m3u" in ct.lower(), f"Content-Type inattendu: {ct}"
+    # Large : avec une source a 0.5x du temps reel, le premier segment met >30 s.
+    r = None
+    for _ in range(90):
+        r = requests.get(f"{BASE}/hls/playlist.m3u8", timeout=TIMEOUT)
+        if r.status_code == 200:
+            break
+        time.sleep(1)
+    assert r is not None and r.status_code == 200, f"HTTP {r.status_code} apres 90s"
+    assert "no-cache" in r.headers.get("Cache-Control", ""), "Cache-Control no-cache absent"
     raw_m3u8 = r.text
-    seg_urls = [l.strip() for l in raw_m3u8.splitlines()
+    seg_urls = [f"/hls/{l.strip()}" for l in raw_m3u8.splitlines()
                 if l.strip() and not l.startswith("#")]
     assert len(seg_urls) > 0, "aucun segment dans la playlist"
-    for u in seg_urls:
-        assert u.startswith("/iptv-proxy/seg?url="), f"URL non reecrite: {u}"
     durations = re.findall(r"#EXTINF:([\d.]+)", raw_m3u8)
     print(f"         -> {len(seg_urls)} segments, durees EXTINF: {durations}")
-    print(f"\n         --- M3U8 brut ---")
-    for line in raw_m3u8.splitlines():
-        print(f"         {line}")
-    print(f"         --- fin M3U8 ---\n")
-check("GET /iptv-proxy/playlist.m3u8 -> m3u8 avec URLs reecrites", t_proxy_playlist)
+check("GET /hls/playlist.m3u8 -> segments ecrits par ffmpeg", t_hls_playlist)
 
-def t_proxy_seg_streaming():
+def t_hls_segment():
     if not seg_urls:
         raise AssertionError("aucun segment disponible (playlist vide)")
-    seg = seg_urls[0]
     t0 = time.time()
-    r = requests.get(f"{BASE}{seg}", stream=True, timeout=20)
-    assert r.status_code == 200, f"HTTP {r.status_code}"
-    first_chunk = next(r.iter_content(4096), None)
-    dt_first = time.time() - t0
-    assert first_chunk and len(first_chunk) > 0, "premier chunk vide"
-    cl = r.headers.get("Content-Length", "?")
-    ct = r.headers.get("Content-Type", "?")
-    print(f"         -> premiers 4KB recus en {dt_first*1000:.0f}ms")
-    print(f"         -> Content-Length={cl}  Content-Type={ct}")
-    assert dt_first < 8.0, f"premier chunk trop lent: {dt_first:.1f}s"
-    r.close()
-check("Premier chunk segment recu rapidement (streaming)", t_proxy_seg_streaming)
-
-def t_seg_speed():
-    if not seg_urls:
-        raise AssertionError("aucun segment disponible")
-    seg = seg_urls[0]
-    t0 = time.time()
-    r = requests.get(f"{BASE}{seg}", timeout=60)
+    r = requests.get(f"{BASE}{seg_urls[0]}", timeout=20)
     dt = time.time() - t0
-    size_kb = len(r.content) // 1024
-    speed_kbps = size_kb * 8 / max(dt, 0.001)
-    print(f"         -> {size_kb} KB en {dt:.1f}s = {speed_kbps:.0f} kbps")
-    # Recuperer les durees pour calculer le bitrate source
-    durations = re.findall(r"#EXTINF:([\d.]+)", raw_m3u8 or "")
-    if durations:
-        seg_duration = float(durations[0])
-        video_kbps = size_kb * 8 / max(seg_duration, 1)
-        ratio = speed_kbps / max(video_kbps, 1)
-        print(f"         -> duree segment: {seg_duration}s  bitrate video: {video_kbps:.0f} kbps")
-        print(f"         -> ratio dl/bitrate: {ratio:.2f}x ({'OK: buffer peut se remplir' if ratio >= 1 else 'PROBLEME: trop lent pour la lecture'})")
-        assert ratio > 0, "impossible de calculer"
-check("Debit segment vs bitrate video", t_seg_speed)
+    assert r.status_code == 200, f"HTTP {r.status_code}"
+    assert len(r.content) > 0, "segment vide"
+    print(f"         -> {len(r.content)//1024} KB recus en {dt*1000:.0f}ms (lecture disque locale)")
+check("GET segment HLS -> servi depuis le disque", t_hls_segment)
+
+def t_hls_progress():
+    """Verifie que ffmpeg continue d'ecrire : la playlist doit avancer."""
+    seq = re.search(r"#EXT-X-MEDIA-SEQUENCE:(\d+)", raw_m3u8 or "")
+    assert seq, "EXT-X-MEDIA-SEQUENCE absent"
+    before = int(seq.group(1))
+    deadline = time.time() + 45
+    after = before
+    while time.time() < deadline and after <= before:
+        time.sleep(3)
+        r = requests.get(f"{BASE}/hls/playlist.m3u8", timeout=TIMEOUT)
+        m = re.search(r"#EXT-X-MEDIA-SEQUENCE:(\d+)", r.text)
+        if m:
+            after = int(m.group(1))
+    assert after > before, f"playlist figee (seq {before} -> {after}) : ffmpeg n'ecrit plus"
+    print(f"         -> media-sequence {before} -> {after} (flux vivant)")
+check("La playlist avance (ffmpeg ecrit en continu)", t_hls_progress)
 
 # ── 5. Robustesse ────────────────────────────────────────────────────────────
 print("\n[5] Robustesse")
