@@ -229,7 +229,7 @@ def start_feed():
             "ffmpeg", "-y",
             # Écoute SRT : ffmpeg bloque ici jusqu'à ce que le feeder se connecte.
             "-fflags", "+genpts",
-            "-i", f"srt://0.0.0.0:{SRT_PORT}?mode=listener&latency=3000",
+            "-i", f"srt://0.0.0.0:{SRT_PORT}?mode=listener&latency=6000",
             "-c", "copy",
             "-f", "hls",
             "-hls_time", "4",

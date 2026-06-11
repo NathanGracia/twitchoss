@@ -2,3 +2,5 @@ hls/
 __pycache__/
 *.pyc
 .env
+feeder.bat
+feeder.sh
