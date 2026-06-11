@@ -1,5 +1,5 @@
 from flask import Flask, jsonify, send_file, send_from_directory, request as freq, make_response, Response
-import subprocess, threading, os, atexit, shutil, time, urllib.parse, traceback, concurrent.futures
+import subprocess, threading, os, atexit, shutil, time, urllib.parse, traceback, concurrent.futures, unicodedata, re
 from pathlib import Path
 
 app = Flask(__name__)
@@ -13,11 +13,47 @@ _lock    = threading.Lock()
 _sl_proc = None
 _ff_proc = None
 
-_iptv_cache: dict   = {"channels": [], "ts": 0.0}
-_streams_cache: dict = {"streams": None, "ts": 0.0}
-IPTV_CACHE_TTL    = 3600
-STREAMS_CACHE_TTL = 7200
+_iptv_cache: dict      = {"channels": [], "ts": 0.0}
+_streams_cache: dict   = {"streams": None, "ts": 0.0}
+_channels_cache: dict  = {"channels": None, "ts": 0.0}
+IPTV_CACHE_TTL     = 3600
+STREAMS_CACHE_TTL  = 7200
+CHANNELS_CACHE_TTL = 7200
 _iptv_proxy_url: str | None = None
+
+# User-Agent navigateur partagé pour toutes les requêtes IPTV (test de débit + ffmpeg).
+# Certains relais bloquent les UA "VLC"/ffmpeg par défaut.
+IPTV_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+           "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36")
+
+# Port d'écoute SRT pour le feeder maison (cf. /start-feed). SRT = UDP.
+SRT_PORT = 9000
+
+
+def _flat(s: str) -> str:
+    """Normalise un nom : minuscules, sans accents, sans non-alphanumériques."""
+    s = unicodedata.normalize('NFD', s.lower())
+    s = ''.join(c for c in s if unicodedata.category(c) != 'Mn')
+    return ''.join(c for c in s if c.isalnum())
+
+
+def _clean(s: str) -> str:
+    """Retire les qualificateurs entre parenthèses : 'France 2 (1080p)' → 'France 2'."""
+    if '(' in s:
+        s = s[:s.index('(')]
+    return s.strip()
+
+
+def _name_score(query: str, candidate: str) -> float:
+    q, c = _flat(_clean(query)), _flat(_clean(candidate))
+    if not q or not c:
+        return 0.0
+    if q == c:
+        return 1.0
+    shorter, longer = (q, c) if len(q) <= len(c) else (c, q)
+    if shorter in longer:
+        return len(shorter) / len(longer)
+    return 0.0
 
 
 # ── Debug logging ──────────────────────────────────────────────────────────────
@@ -174,6 +210,46 @@ def start(channel):
     return jsonify({"ok": True})
 
 
+# ── Feed maison (SRT) ───────────────────────────────────────────────────────────
+# Un PC en France (IP résidentielle) capte une chaîne via streamlink et pousse le
+# flux ici en SRT. Le VPS ne fait que remuxer en HLS et rediffuser : il ne contacte
+# aucune source, donc son IP datacenter (bloquée par TF1/france.tv/etc.) n'intervient
+# jamais. Voir feeder.sh / feeder.bat pour la commande à lancer côté PC.
+
+@app.route("/start-feed", methods=["GET", "POST"])
+def start_feed():
+    global _sl_proc, _ff_proc, _iptv_proxy_url
+    log("FEED", f"écoute SRT sur :{SRT_PORT}, attente du feeder maison…")
+    _iptv_proxy_url = None
+    _kill_all()
+    _reset_hls()
+
+    ff = subprocess.Popen(
+        [
+            "ffmpeg", "-y",
+            # Écoute SRT : ffmpeg bloque ici jusqu'à ce que le feeder se connecte.
+            "-fflags", "+genpts",
+            "-i", f"srt://0.0.0.0:{SRT_PORT}?mode=listener&latency=3000",
+            "-c", "copy",
+            "-f", "hls",
+            "-hls_time", "4",
+            "-hls_list_size", "6",
+            "-hls_flags", "delete_segments",
+            "-hls_allow_cache", "0",
+            "-hls_segment_filename", str(HLS_DIR / "seg%d.ts"),
+            str(HLS_DIR / "playlist.m3u8"),
+        ],
+        stderr=subprocess.PIPE,
+    )
+    threading.Thread(target=_drain_stderr, args=(ff.stderr, "ffmpeg-feed"), daemon=True).start()
+
+    with _lock:
+        _sl_proc = None
+        _ff_proc = ff
+
+    return jsonify({"ok": True, "playlist": "/hls/playlist.m3u8", "mode": "feed", "srt_port": SRT_PORT})
+
+
 # ── IPTV channels list ─────────────────────────────────────────────────────────
 
 def _parse_m3u_attr(line, attr):
@@ -183,43 +259,57 @@ def _parse_m3u_attr(line, attr):
         return ""
 
 
+M3U_SOURCES = [
+    ("FR", "https://iptv-org.github.io/iptv/countries/fr.m3u"),
+    ("DE", "https://iptv-org.github.io/iptv/countries/de.m3u"),
+    ("AT", "https://iptv-org.github.io/iptv/countries/at.m3u"),
+]
+
+
+def _parse_m3u(text: str, groups: dict):
+    lines = text.splitlines()
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if line.startswith("#EXTINF"):
+            name   = line.split(",", 1)[-1].strip() if "," in line else "Unknown"
+            logo   = _parse_m3u_attr(line, "tvg-logo")
+            tvg_id = _parse_m3u_attr(line, "tvg-id") or name
+            i += 1
+            while i < len(lines) and not lines[i].strip():
+                i += 1
+            if i < len(lines) and lines[i].strip() and not lines[i].startswith("#"):
+                url = lines[i].strip()
+                if url.lower().endswith(".mpd"):
+                    i += 1
+                    continue
+                if tvg_id not in groups:
+                    groups[tvg_id] = {"name": name, "logo": logo, "tvg_id": tvg_id, "sources": []}
+                if url not in groups[tvg_id]["sources"]:
+                    groups[tvg_id]["sources"].append(url)
+        i += 1
+
+
 @app.route("/iptv-channels")
 def iptv_channels():
     import requests as req
     now = time.time()
     if now - _iptv_cache["ts"] < IPTV_CACHE_TTL and _iptv_cache["channels"]:
         return jsonify(_iptv_cache["channels"])
-    try:
-        r = req.get("https://iptv-org.github.io/iptv/countries/fr.m3u", timeout=15)
-        r.raise_for_status()
-        lines = r.text.splitlines()
-        # Groupe par tvg-id (ou nom si tvg-id absent)
-        groups: dict[str, dict] = {}
-        i = 0
-        while i < len(lines):
-            line = lines[i]
-            if line.startswith("#EXTINF"):
-                name   = line.split(",", 1)[-1].strip() if "," in line else "Unknown"
-                logo   = _parse_m3u_attr(line, "tvg-logo")
-                tvg_id = _parse_m3u_attr(line, "tvg-id") or name
-                i += 1
-                while i < len(lines) and not lines[i].strip():
-                    i += 1
-                if i < len(lines) and lines[i].strip() and not lines[i].startswith("#"):
-                    url = lines[i].strip()
-                    if tvg_id not in groups:
-                        groups[tvg_id] = {"name": name, "logo": logo, "tvg_id": tvg_id, "sources": []}
-                    groups[tvg_id]["sources"].append(url)
-            i += 1
-        chs = list(groups.values())
-        _iptv_cache["channels"] = chs
-        _iptv_cache["ts"] = now
-        multi = sum(1 for c in chs if len(c["sources"]) > 1)
-        log("IPTV-LIST", f"{len(chs)} chaines ({multi} avec plusieurs sources)")
-        return jsonify(chs)
-    except Exception as e:
-        log("IPTV-LIST", f"ERREUR: {e}")
-        return jsonify(_iptv_cache["channels"])
+    groups: dict[str, dict] = {}
+    for country, url in M3U_SOURCES:
+        try:
+            r = req.get(url, timeout=15)
+            r.raise_for_status()
+            _parse_m3u(r.text, groups)
+            log("IPTV-LIST", f"{country}: {len(groups)} chaînes total après merge")
+        except Exception as e:
+            log("IPTV-LIST", f"ERREUR {country}: {e}")
+    chs = list(groups.values())
+    _iptv_cache["channels"] = chs
+    _iptv_cache["ts"] = now
+    log("IPTV-LIST", f"Total: {len(chs)} chaînes (FR+DE+AT)")
+    return jsonify(chs)
 
 
 # ── IPTV start ────────────────────────────────────────────────────────────────
@@ -230,7 +320,7 @@ def _speed_test_url(url):
     try:
         if not url.startswith(("http://", "https://")):
             return (url, 0, 0)
-        hdrs = {"User-Agent": "VLC/3.0.0"}
+        hdrs = {"User-Agent": IPTV_UA}
         # Si c'est un m3u8, récupérer le 1er segment
         seg_url = url
         extinf  = 0.0
@@ -311,29 +401,28 @@ def start_iptv():
 
     log("IPTV-START", f"url={stream_url}  is_hls={is_hls}  dl={dl_kbps:.0f} vid={vid_kbps:.0f}")
 
-    if is_hls:
-        _kill_all()
-        _iptv_proxy_url = stream_url
-        log("IPTV-START", "-> mode PROXY")
-        return jsonify({
-            "ok": True, "playlist": "/iptv-proxy/playlist.m3u8", "mode": "proxy",
-            "dl_kbps": round(dl_kbps), "vid_kbps": round(vid_kbps),
-            "ratio": round(ratio, 2) if ratio else None,
-        })
-
-    # Non-HLS (RTMP…) → ffmpeg
+    # Tout passe par ffmpeg (HLS et RTMP) — le proxy Flask causait des rebufferings
+    # car chaque segment était téléchargé en double-hop en temps réel.
+    # ffmpeg pré-télécharge et écrit les segments sur disque ; le browser les lit localement.
     _iptv_proxy_url = None
     _kill_all()
     _reset_hls()
-    log("IPTV-START", "-> mode FFMPEG")
+    log("IPTV-START", f"-> mode FFMPEG (is_hls={is_hls})")
 
     ff = subprocess.Popen(
         [
             "ffmpeg", "-y",
+            # User-Agent navigateur : beaucoup de relais IPTV (ex: France 2 sur
+            # 69.64.57.208) rejettent l'UA par défaut de ffmpeg et renvoient une
+            # playlist vide -> boucle "End of file" sans jamais écrire de segment.
+            "-user_agent", IPTV_UA,
             "-reconnect", "1",
             "-reconnect_at_eof", "1",
             "-reconnect_streamed", "1",
             "-reconnect_delay_max", "5",
+            # Corrige les timestamps incohérents de certains flux (évite les
+            # "Invalid timestamps" et le décalage son/image).
+            "-fflags", "+genpts+igndts",
             "-i", stream_url,
             "-c", "copy",
             "-f", "hls",
@@ -371,10 +460,17 @@ def iptv_proxy_playlist():
 
     log("PROXY-M3U8", f"fetch {url}")
     try:
-        r = req.get(url, timeout=10, headers={"User-Agent": "VLC/3.0.0"})
+        r = req.get(url, timeout=6, headers={"User-Agent": IPTV_UA})
         r.raise_for_status()
         dt = time.time() - t0
         log("PROXY-M3U8", f"OK {r.status_code} en {dt*1000:.0f}ms  {len(r.text)} chars")
+
+        def _proxy_uri(m):
+            """Réécrit URI="..." dans les tags #EXT-X-MEDIA, #EXT-X-KEY, etc."""
+            raw = m.group(1)
+            abs_uri = urllib.parse.urljoin(url, raw)
+            proxy = f"/iptv-proxy/playlist.m3u8?url={urllib.parse.quote(abs_uri, safe='')}"
+            return f'URI="{proxy}"'
 
         lines = []
         seg_count = 0
@@ -387,6 +483,8 @@ def iptv_proxy_playlist():
                 else:
                     line = f"/iptv-proxy/seg?url={urllib.parse.quote(abs_url, safe='')}"
                     seg_count += 1
+            elif stripped.startswith(("#EXT-X-MEDIA", "#EXT-X-KEY", "#EXT-X-SESSION-DATA")):
+                line = re.sub(r'URI="([^"]+)"', _proxy_uri, line)
             lines.append(line)
 
         log("PROXY-M3U8", f"{seg_count} segments réécrits")
@@ -396,7 +494,7 @@ def iptv_proxy_playlist():
         return resp
 
     except Exception as e:
-        log("PROXY-M3U8", f"ERREUR: {e}")
+        log("PROXY-M3U8", f"ERREUR {type(e).__name__}: {e}  url={url[-80:]}")
         traceback.print_exc()
         return str(e), 502
 
@@ -412,7 +510,7 @@ def iptv_proxy_seg():
     short = seg_url.split("/")[-1][:40]
     log("PROXY-SEG", f"fetch {short}")
     try:
-        r = req.get(seg_url, stream=True, timeout=30, headers={"User-Agent": "VLC/3.0.0"})
+        r = req.get(seg_url, stream=True, timeout=30, headers={"User-Agent": IPTV_UA})
         r.raise_for_status()
         ct      = r.headers.get("content-type", "video/MP2T")
         cl      = r.headers.get("content-length")
@@ -441,12 +539,13 @@ def iptv_proxy_seg():
 def find_sources():
     import requests as req
     tvg_id = freq.args.get("tvg_id", "").strip()
-    if not tvg_id:
-        return jsonify({"error": "tvg_id requis"}), 400
+    name   = freq.args.get("name", "").strip()
+    if not tvg_id and not name:
+        return jsonify({"error": "tvg_id ou name requis"}), 400
 
     now = time.time()
     if _streams_cache["streams"] is None or now - _streams_cache["ts"] > STREAMS_CACHE_TTL:
-        log("FIND-SOURCES", "telechargement streams.json (base globale iptv-org)...")
+        log("FIND-SOURCES", "telechargement streams.json...")
         try:
             r = req.get("https://iptv-org.github.io/api/streams.json", timeout=25)
             r.raise_for_status()
@@ -454,18 +553,53 @@ def find_sources():
             _streams_cache["ts"] = now
             log("FIND-SOURCES", f"{len(_streams_cache['streams'])} streams en cache")
         except Exception as e:
-            log("FIND-SOURCES", f"ERREUR: {e}")
+            log("FIND-SOURCES", f"ERREUR streams.json: {e}")
             return jsonify({"error": str(e), "sources": []}), 502
 
     streams = _streams_cache["streams"]
-    sources = [
-        s["url"] for s in streams
-        if s.get("channel") == tvg_id
-        and s.get("url", "").startswith("http")
-        and s.get("status") != "offline"
-    ]
-    log("FIND-SOURCES", f"tvg_id={tvg_id!r} -> {len(sources)} sources trouvees")
-    return jsonify({"tvg_id": tvg_id, "sources": sources, "count": len(sources)})
+
+    def _fetch_sources(tid):
+        return [s["url"] for s in streams
+                if s.get("channel") == tid
+                and s.get("url", "").startswith("http")
+                and s.get("status") != "offline"]
+
+    # 1) Recherche par tvg_id exact
+    if tvg_id:
+        sources = _fetch_sources(tvg_id)
+        if sources:
+            log("FIND-SOURCES", f"tvg_id={tvg_id!r} -> {len(sources)} sources")
+            return jsonify({"tvg_id": tvg_id, "sources": sources, "count": len(sources), "method": "tvg_id"})
+        log("FIND-SOURCES", f"tvg_id={tvg_id!r} -> 0 résultat, fallback par nom")
+
+    # 2) Fallback : recherche par nom dans channels.json
+    query = name or tvg_id
+    if _channels_cache["channels"] is None or now - _channels_cache["ts"] > CHANNELS_CACHE_TTL:
+        log("FIND-SOURCES", "telechargement channels.json...")
+        try:
+            r = req.get("https://iptv-org.github.io/api/channels.json", timeout=20)
+            r.raise_for_status()
+            _channels_cache["channels"] = r.json()
+            _channels_cache["ts"] = now
+            log("FIND-SOURCES", f"{len(_channels_cache['channels'])} channels en cache")
+        except Exception as e:
+            log("FIND-SOURCES", f"ERREUR channels.json: {e}")
+            return jsonify({"tvg_id": tvg_id, "sources": [], "count": 0, "method": "tvg_id"})
+
+    best_id, best_score = None, 0.0
+    for ch in _channels_cache["channels"]:
+        score = _name_score(query, ch.get("name", ""))
+        if score > best_score:
+            best_score, best_id = score, ch["id"]
+
+    if best_id and best_score >= 0.85:
+        sources = _fetch_sources(best_id)
+        log("FIND-SOURCES", f"nom={query!r} -> {best_id!r} (score={best_score:.2f}) -> {len(sources)} sources")
+        return jsonify({"tvg_id": best_id, "sources": sources, "count": len(sources),
+                        "method": "name", "score": round(best_score, 2)})
+
+    log("FIND-SOURCES", f"nom={query!r} -> aucune correspondance (meilleur score={best_score:.2f})")
+    return jsonify({"tvg_id": tvg_id, "sources": [], "count": 0, "method": "none"})
 
 
 @app.route("/debug-info")

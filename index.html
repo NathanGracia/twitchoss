@@ -470,6 +470,11 @@
       <button class="tab"        id="tab-iptv"   onclick="switchTab('iptv')">Chaînes TV</button>
     </div>
 
+    <button onclick="watchFeed()" title="Le direct poussé depuis le PC maison (matchs, etc.)"
+      style="margin:8px 10px;padding:9px;background:var(--live);color:#fff;border:none;border-radius:6px;font-weight:700;cursor:pointer;font-size:13px">
+      📡 Regarder le direct maison
+    </button>
+
     <div class="search-wrap">
       <input class="search-input" id="search-input" type="text" placeholder="Rechercher…" oninput="onSearch(this.value)">
     </div>
@@ -562,6 +567,7 @@
     bufferLen: 0,
     segCount: 0,
     m3u8Raw: null,
+    sessionInfo: '',
   };
 
   function dbgLog(cls, msg) {
@@ -573,14 +579,19 @@
 
   function dbgText() {
     const rows = _dbg.events.map(e => `${e.ts} [${e.cls}] ${e.msg}`).join('\n');
+    const si = _dbg.sessionInfo ? _dbg.sessionInfo.replace(/<[^>]*>/g, '') : '';
+    const fi = _dbg.fragInProgress
+      ? `seg #${_dbg.fragInProgress.sn} en cours depuis ${((Date.now()-_dbg.fragInProgress.t)/1000).toFixed(1)}s` : '';
     return [
       `Mode: ${_dbg.mode}  Playlist: ${_dbg.playlist}`,
       `Buffer: ${_dbg.bufferLen.toFixed(1)}s  Segs: ${_dbg.segCount}`,
       `Stalls: ${_dbg.stallCount}  Waiting: ${_dbg.waitingCount}  Erreurs: ${_dbg.errorCount}`,
+      si ? `Speed: ${si}` : '',
+      fi ? `Download: ${fi}` : '',
       _dbg.m3u8Raw ? '\n--- M3U8 brut ---\n' + _dbg.m3u8Raw : '',
       '\n--- Événements ---',
       rows,
-    ].join('\n');
+    ].filter(Boolean).join('\n');
   }
 
   function dbgRender() {
@@ -592,15 +603,22 @@
       ? `<hr style="border-color:rgba(255,255,255,0.1);margin:4px 0">
          <div style="color:#888;white-space:pre;overflow-x:auto">${_dbg.m3u8Raw.replace(/</g,'&lt;')}</div>`
       : `<div style="color:#555"><span onclick="dbgFetchM3u8()" style="cursor:pointer;color:#9147ff;text-decoration:underline">↓ charger le m3u8 brut</span></div>`;
+    const sessionBlock = _dbg.sessionInfo
+      ? `<div style="color:#888;font-size:10px">${_dbg.sessionInfo}</div>` : '';
+    const fragBlock = _dbg.fragInProgress
+      ? `<div style="color:#e3b341">⏳ seg #${_dbg.fragInProgress.sn} en cours… ${((Date.now()-_dbg.fragInProgress.t)/1000).toFixed(1)}s</div>`
+      : '';
     document.getElementById('debug-panel').innerHTML = `
       <div><b>Mode</b> ${_dbg.mode} &nbsp; <b>Playlist</b> ${_dbg.playlist}</div>
-      <div><b>Buffer</b> ${_dbg.bufferLen.toFixed(1)}s &nbsp; <b>Segs reçus</b> ${_dbg.segCount}</div>
+      <div><b>Buffer</b> ${_dbg.bufferLen < -5 ? '<span class="dbg-err">désync</span>' : _dbg.bufferLen.toFixed(1)+'s'} &nbsp; <b>Segs reçus</b> ${_dbg.segCount}</div>
       <div><b>Stalls</b> <span class="${_dbg.stallCount ? 'dbg-err' : 'dbg-ok'}">${_dbg.stallCount}</span>
            &nbsp; <b>Waiting</b> <span class="${_dbg.waitingCount ? 'dbg-warn' : 'dbg-ok'}">${_dbg.waitingCount}</span>
            &nbsp; <b>Erreurs</b> <span class="${_dbg.errorCount ? 'dbg-err' : 'dbg-ok'}">${_dbg.errorCount}</span></div>
+      ${sessionBlock}${fragBlock}
       ${m3u8block}
       <hr style="border-color:rgba(255,255,255,0.1);margin:4px 0">
       ${rows}
+      ${_dbg.errors.length ? `<hr style="border-color:rgba(255,255,255,0.1);margin:4px 0"><div style="color:#ff6b6b;font-size:10px">${_dbg.errors.map(e=>`${e.ts} ${e.msg}`).join('<br>')}</div>` : ''}
       <div style="color:#555;margin-top:2px">D = fermer | sélectionnable</div>
       <button id="debug-copy" onclick="dbgCopy()">📋 Copier tout le debug</button>`;
   }
@@ -630,13 +648,13 @@
     if (_dbg.on) dbgRender();
   }
 
-  // Polling buffer level toutes les secondes
+  // Polling toutes les secondes : buffer + refresh panel (pour le timer download)
   setInterval(() => {
     const v = document.getElementById('video');
     if (v.buffered.length && !v.paused) {
       _dbg.bufferLen = v.buffered.end(v.buffered.length - 1) - v.currentTime;
-      if (_dbg.on) dbgRender();
     }
+    if (_dbg.on) dbgRender();
   }, 1000);
 
   const _favsTwitch = new Set(JSON.parse(localStorage.getItem('twitchoss_favs_twitch') || '[]'));
@@ -673,18 +691,16 @@
     const ch     = _iptvChannels[_currentIptvIdx];
     const tvg_id = ch.tvg_id || '';
     const hint   = document.getElementById('info-hint');
-    if (!tvg_id) {
-      hint.style.color = '#e3b341';
-      hint.textContent = 'Pas de tvg-id — recherche impossible';
-      return;
-    }
 
     hint.style.color = '#e3b341';
     hint.textContent = 'Recherche dans la base globale iptv-org…';
-    dbgLog('ok', `find-sources tvg_id=${tvg_id}`);
+    dbgLog('ok', `find-sources tvg_id=${tvg_id || '—'} name=${ch.name}`);
 
     try {
-      const r = await fetch(`/find-sources?tvg_id=${encodeURIComponent(tvg_id)}`).then(r => r.json());
+      const params = new URLSearchParams();
+      if (tvg_id) params.set('tvg_id', tvg_id);
+      params.set('name', ch.name || '');
+      const r = await fetch(`/find-sources?${params}`).then(r => r.json());
       if (r.error) { hint.textContent = `Erreur: ${r.error}`; return; }
 
       const extra   = r.sources || [];
@@ -710,11 +726,38 @@
 
       _dbg.mode = result.mode ?? '?';
       dbgLog('ok', `meilleure source: dl=${result.dl_kbps} vid=${result.vid_kbps} ratio=${result.ratio}`);
+      if (result.dl_kbps) {
+        const ratioColor = result.ratio >= 1.5 ? '#56d364' : result.ratio >= 0.85 ? '#e3b341' : '#ff6b6b';
+        _dbg.sessionInfo = `<span style="color:${ratioColor}">dl=${result.dl_kbps}kbps &nbsp; vid=${result.vid_kbps}kbps &nbsp; ratio=${result.ratio}x</span>`;
+        _dbg.speedRatio  = result.ratio ?? null;
+      }
       _showSpeedHint(result.ratio, result.dl_kbps);
+
+      if (result.ratio !== null && result.ratio < 0.8) {
+        dbgLog('err', `meilleure source encore trop lente (${result.ratio}x) — abandon`);
+        showOverlay('error', `Aucune source assez rapide (meilleur ratio: ${result.ratio}x)`);
+        return;
+      }
 
       if (result.playlist === '/hls/playlist.m3u8') {
         const ready = await waitForPlaylist('/hls/playlist.m3u8');
         if (!ready) { showOverlay('error', 'Flux indisponible'); return; }
+      } else if (result.mode === 'proxy') {
+        document.getElementById('loading-msg').textContent = 'Vérification de la source…';
+        dbgLog('ok', 'preflight /iptv-proxy/playlist.m3u8');
+        try {
+          const probe = await fetch('/iptv-proxy/playlist.m3u8', {cache: 'no-store'});
+          if (!probe.ok) {
+            dbgLog('err', `preflight HTTP ${probe.status}`);
+            showOverlay('error', `Source IPTV indisponible (HTTP ${probe.status})`);
+            return;
+          }
+          dbgLog('ok', `preflight OK HTTP ${probe.status}`);
+        } catch(e) {
+          dbgLog('err', `preflight erreur réseau: ${e.message}`);
+          showOverlay('error', 'Erreur réseau (source inaccessible)');
+          return;
+        }
       }
       startHls(result.playlist);
 
@@ -906,6 +949,24 @@
     startHls('/hls/playlist.m3u8');
   }
 
+  // Regarde le direct poussé par le feeder maison. Ne (re)démarre RIEN côté VPS :
+  // charge juste le HLS déjà alimenté, pour qu'un pote ne coupe pas le flux du host.
+  async function watchFeed() {
+    _activeChannel = 'feed';
+    _activeType    = 'feed';
+    renderIptvList();
+    document.getElementById('info-channel').textContent = 'Direct maison';
+    document.getElementById('info-hint').textContent    = '';
+    setLive(false);
+    destroyHls();
+    showOverlay('loading');
+    setChatMode('iptv', null);
+    document.getElementById('loading-msg').textContent = 'Connexion au direct maison…';
+    const ready = await waitForPlaylist('/hls/playlist.m3u8');
+    if (!ready) { showOverlay('error', 'Pas de direct maison en ce moment'); return; }
+    startHls('/hls/playlist.m3u8');
+  }
+
   async function selectIptvChannel(idx) {
     const ch = _iptvChannels[idx];
     _activeChannel  = 'iptv:' + idx;
@@ -934,14 +995,43 @@
       ? ` dl=${result.dl_kbps}kbps vid=${result.vid_kbps}kbps ratio=${result.ratio}`
       : '';
     dbgLog('ok', `start-iptv mode=${result.mode}${speedInfo}`);
+    if (result.dl_kbps) {
+      const ratioColor = result.ratio >= 1.5 ? '#56d364' : result.ratio >= 0.85 ? '#e3b341' : '#ff6b6b';
+      _dbg.sessionInfo = `<span style="color:${ratioColor}">dl=${result.dl_kbps}kbps &nbsp; vid=${result.vid_kbps}kbps &nbsp; ratio=${result.ratio}x</span>`;
+      _dbg.speedRatio  = result.ratio ?? null;
+    }
 
     // Indicateur de débit dans la barre info
     _showSpeedHint(result.ratio, result.dl_kbps);
+
+    // Si le ratio est franchement insuffisant dès le départ → chercher alternatives immédiatement
+    if (result.ratio !== null && result.ratio < 0.8 && _currentIptvIdx !== null) {
+      dbgLog('warn', `ratio=${result.ratio} < 0.8 → recherche d'alternatives sans attendre…`);
+      document.getElementById('loading-msg').textContent = `Source trop lente (${result.ratio}x) — recherche d'alternatives…`;
+      findBetterSource();
+      return;
+    }
 
     // Pour les sources non-HLS traitées par ffmpeg, attendre que le fichier soit créé
     if (result.playlist === '/hls/playlist.m3u8') {
       const ready = await waitForPlaylist('/hls/playlist.m3u8');
       if (!ready) { showOverlay('error', 'Flux indisponible ou timeout'); return; }
+    } else if (result.mode === 'proxy') {
+      document.getElementById('loading-msg').textContent = 'Vérification de la source…';
+      dbgLog('ok', 'preflight /iptv-proxy/playlist.m3u8');
+      try {
+        const probe = await fetch('/iptv-proxy/playlist.m3u8', {cache: 'no-store'});
+        if (!probe.ok) {
+          dbgLog('err', `preflight HTTP ${probe.status}`);
+          showOverlay('error', `Source IPTV indisponible (HTTP ${probe.status})`);
+          return;
+        }
+        dbgLog('ok', `preflight OK HTTP ${probe.status}`);
+      } catch(e) {
+        dbgLog('err', `preflight erreur réseau: ${e.message}`);
+        showOverlay('error', 'Erreur réseau (source inaccessible)');
+        return;
+      }
     }
     startHls(result.playlist);
   }
@@ -969,6 +1059,10 @@
     _dbg.bufferLen    = 0;
     _dbg.m3u8Raw      = null;
     _dbg.events       = [];
+    _dbg.errors       = []; // erreurs persistantes, jamais évincées par les events
+    _dbg.autoRetried  = false;
+    _dbg.fragInProgress = null; // {sn, t}
+    // sessionInfo et speedRatio sont préservés (définis avant startHls)
     dbgLog('ok', `startHls → ${playlist}`);
 
     // Événements vidéo natifs
@@ -1001,7 +1095,13 @@
         video.play().catch(e => dbgLog('warn', `play() refusé: ${e.message}`));
       });
 
+      hls.on(Hls.Events.FRAG_LOADING, (_, data) => {
+        _dbg.fragInProgress = { sn: data.frag.sn, t: Date.now() };
+        dbgLog('ok', `seg #${data.frag.sn} download…`);
+      });
+
       hls.on(Hls.Events.FRAG_LOADED, (_, data) => {
+        _dbg.fragInProgress = null;
         _dbg.segCount++;
         const kb = Math.round((data.frag.stats?.loaded ?? 0) / 1024);
         const ms = Math.round(data.frag.stats?.loading?.end - data.frag.stats?.loading?.start);
@@ -1016,9 +1116,23 @@
       hls.on(Hls.Events.ERROR, (_, data) => {
         _dbg.errorCount++;
         const fatal = data.fatal ? '[FATAL]' : '[recov]';
-        dbgLog('err', `${fatal} type=${data.type} detail=${data.details}`);
+        const msg = `${fatal} type=${data.type} detail=${data.details}`;
+        dbgLog('err', msg);
+        _dbg.errors.push({ ts: new Date().toLocaleTimeString('fr-FR',{hour12:false}), msg });
         if (data.details === Hls.ErrorDetails.FRAG_LOAD_ERROR || data.details === Hls.ErrorDetails.FRAG_LOAD_TIMEOUT)
           dbgLog('err', `  → url: ${data.frag?.url ?? '?'}`);
+        if (data.details === Hls.ErrorDetails.MANIFEST_LOAD_ERROR || data.details === Hls.ErrorDetails.MANIFEST_LOAD_TIMEOUT)
+          dbgLog('err', `  → manifest HTTP ${data.response?.code ?? '?'} url: ${data.context?.url ?? '?'}`);
+        if (data.details === 'bufferStalledError' && !data.fatal
+            && _activeType === 'iptv' && _currentIptvIdx !== null
+            && !_dbg.autoRetried) {
+          const badRatio = _dbg.speedRatio !== null && _dbg.speedRatio < 0.8;
+          if (_dbg.segCount <= 2 || (badRatio && _dbg.segCount <= 15)) {
+            _dbg.autoRetried = true;
+            dbgLog('warn', `source trop lente (ratio=${_dbg.speedRatio ?? '?'}) — recherche auto…`);
+            setTimeout(findBetterSource, 1500);
+          }
+        }
         if (data.fatal) { showOverlay('error', 'Erreur de lecture'); setLive(false); }
       });
 
