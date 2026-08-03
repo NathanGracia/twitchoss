@@ -155,6 +155,7 @@ def channel_info():
                 "avatar": u.get("profileImageURL") or "",
             }
             for u in users
+            if u is not None
         })
     except Exception:
         return jsonify({ch: {"live": False, "avatar": ""} for ch in chs})
