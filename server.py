@@ -1,5 +1,5 @@
 from flask import Flask, jsonify, send_file, send_from_directory, request as freq
-import subprocess, threading, os, atexit, shutil, time, urllib.parse, concurrent.futures, unicodedata
+import subprocess, threading, os, atexit, shutil, time, urllib.parse, concurrent.futures, unicodedata, json
 from pathlib import Path
 
 app = Flask(__name__)
@@ -14,6 +14,16 @@ _sl_proc = None
 _ff_proc = None
 
 _iptv_cache: dict      = {"channels": [], "ts": 0.0}
+IPTV_BLOCKLIST_FILE   = BASE_DIR / "iptv_blocklist.json"
+IPTV_QUALITY_TTL      = 6 * 3600  # ré-audit du débit des chaînes IPTV toutes les 6h
+_iptv_quality_cache: dict = {"bad_ids": set(), "ts": 0.0, "refreshing": False}
+
+try:
+    _blocklist_data = json.loads(IPTV_BLOCKLIST_FILE.read_text(encoding="utf-8"))
+    _iptv_quality_cache["bad_ids"] = set(_blocklist_data.get("bad_ids", []))
+    _iptv_quality_cache["ts"]      = _blocklist_data.get("ts", 0.0)
+except Exception:
+    pass
 _streams_cache: dict   = {"streams": None, "ts": 0.0}
 _channels_cache: dict  = {"channels": None, "ts": 0.0}
 IPTV_CACHE_TTL     = 3600
@@ -131,6 +141,21 @@ def channels():
     return jsonify(read_channels())
 
 
+@app.route("/channels/add", methods=["POST"])
+def add_channel():
+    data = freq.get_json(silent=True) or {}
+    name = (data.get("channel") or "").strip().lower()
+    if not name or not all(c.isalnum() or c == "_" for c in name):
+        return jsonify({"error": "Nom de chaîne invalide"}), 400
+
+    chs = read_channels()
+    if name not in [c.lower() for c in chs]:
+        with CHANNELS_FILE.open("a", encoding="utf-8") as f:
+            f.write(("\n" if chs else "") + name + "\n")
+
+    return jsonify({"ok": True, "channels": read_channels()})
+
+
 @app.route("/channel-info")
 def channel_info():
     import requests as req
@@ -138,7 +163,7 @@ def channel_info():
     if not chs:
         return jsonify({})
     query = {
-        "query": "query($logins:[String!]){users(logins:$logins){login profileImageURL(width:70) stream{id}}}",
+        "query": "query($logins:[String!]){users(logins:$logins){login profileImageURL(width:70) stream{id title viewersCount game{name}}}}",
         "variables": {"logins": chs},
     }
     try:
@@ -151,13 +176,17 @@ def channel_info():
         users = r.json()["data"]["users"]
         return jsonify({
             u["login"].lower(): {
-                "live":   u["stream"] is not None,
-                "avatar": u.get("profileImageURL") or "",
+                "live":    u["stream"] is not None,
+                "avatar":  u.get("profileImageURL") or "",
+                "title":   (u["stream"] or {}).get("title") or "",
+                "viewers": (u["stream"] or {}).get("viewersCount") or 0,
+                "game":    ((u["stream"] or {}).get("game") or {}).get("name") or "",
             }
             for u in users
+            if u is not None
         })
     except Exception:
-        return jsonify({ch: {"live": False, "avatar": ""} for ch in chs})
+        return jsonify({ch: {"live": False, "avatar": "", "title": "", "viewers": 0, "game": ""} for ch in chs})
 
 
 @app.route("/hls/<path:filename>")
@@ -292,22 +321,27 @@ def _parse_m3u(text: str, groups: dict):
 def iptv_channels():
     import requests as req
     now = time.time()
-    if now - _iptv_cache["ts"] < IPTV_CACHE_TTL and _iptv_cache["channels"]:
-        return jsonify(_iptv_cache["channels"])
-    groups: dict[str, dict] = {}
-    for country, url in M3U_SOURCES:
-        try:
-            r = req.get(url, timeout=15)
-            r.raise_for_status()
-            _parse_m3u(r.text, groups)
-            log("IPTV-LIST", f"{country}: {len(groups)} chaînes total après merge")
-        except Exception as e:
-            log("IPTV-LIST", f"ERREUR {country}: {e}")
-    chs = list(groups.values())
-    _iptv_cache["channels"] = chs
-    _iptv_cache["ts"] = now
-    log("IPTV-LIST", f"Total: {len(chs)} chaînes (FR+DE+AT)")
-    return jsonify(chs)
+    if now - _iptv_cache["ts"] >= IPTV_CACHE_TTL or not _iptv_cache["channels"]:
+        groups: dict[str, dict] = {}
+        for country, url in M3U_SOURCES:
+            try:
+                r = req.get(url, timeout=15)
+                r.raise_for_status()
+                _parse_m3u(r.text, groups)
+                log("IPTV-LIST", f"{country}: {len(groups)} chaînes total après merge")
+            except Exception as e:
+                log("IPTV-LIST", f"ERREUR {country}: {e}")
+        chs = list(groups.values())
+        _iptv_cache["channels"] = chs
+        _iptv_cache["ts"] = now
+        log("IPTV-LIST", f"Total: {len(chs)} chaînes (FR+DE+AT)")
+
+    chs = _iptv_cache["channels"]
+    if now - _iptv_quality_cache["ts"] > IPTV_QUALITY_TTL:
+        _refresh_iptv_quality(chs)
+
+    bad = _iptv_quality_cache["bad_ids"]
+    return jsonify([c for c in chs if c["tvg_id"] not in bad])
 
 
 # ── IPTV start ────────────────────────────────────────────────────────────────
@@ -351,6 +385,44 @@ def _speed_test_url(url):
         return (url, dl_kbps, vid_kbps)
     except Exception as e:
         return (url, 0, 0)
+
+
+def _refresh_iptv_quality(chs):
+    """Teste le débit de toutes les chaînes IPTV en arrière-plan et met à jour
+    le blocklist des chaînes mortes / trop lentes pour être regardables."""
+    if _iptv_quality_cache["refreshing"]:
+        return
+    _iptv_quality_cache["refreshing"] = True
+
+    def _run():
+        bad = set()
+        try:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=16) as ex:
+                futs = {ex.submit(_speed_test_url, ch["sources"][0]): ch for ch in chs}
+                for f in concurrent.futures.as_completed(futs, timeout=300):
+                    ch = futs[f]
+                    try:
+                        _, dl_kbps, vid_kbps = f.result()
+                    except Exception:
+                        dl_kbps, vid_kbps = 0, 0
+                    ratio = (dl_kbps / vid_kbps) if vid_kbps else None
+                    is_bad = (ratio is not None and ratio < 0.85) or (ratio is None and dl_kbps < 500)
+                    if is_bad:
+                        bad.add(ch["tvg_id"])
+            _iptv_quality_cache["bad_ids"] = bad
+            _iptv_quality_cache["ts"] = time.time()
+            try:
+                IPTV_BLOCKLIST_FILE.write_text(
+                    json.dumps({"bad_ids": sorted(bad), "ts": _iptv_quality_cache["ts"]}, ensure_ascii=False),
+                    encoding="utf-8",
+                )
+            except Exception:
+                pass
+            log("IPTV-QUALITY", f"{len(bad)}/{len(chs)} chaînes filtrées (débit insuffisant)")
+        finally:
+            _iptv_quality_cache["refreshing"] = False
+
+    threading.Thread(target=_run, daemon=True).start()
 
 
 def _best_source(sources):

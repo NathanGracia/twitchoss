@@ -7,28 +7,42 @@
   <style>
     :root {
       --bg-base:    #0e0e10;
-      --bg-raised:  #18181b;
-      --bg-hover:   #26262c;
       --border:     rgba(255,255,255,0.08);
       --accent:     #9147ff;
       --text:       #efeff1;
       --text-muted: #adadb8;
       --live:       #eb0400;
       --sidebar-w:  240px;
-      --chat-w:     340px;
+      --chat-w:     300px;
     }
 
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
-      background: var(--bg-base);
+      background: #050506;
       color: var(--text);
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       height: 100vh;
       overflow: hidden;
+      position: relative;
+    }
+
+    /* Halos flous derrière l'interface, pour donner du grain au verre */
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      background:
+        radial-gradient(ellipse 700px 500px at 8% 0%,   rgba(145,71,255,0.30), transparent 60%),
+        radial-gradient(ellipse 600px 500px at 100% 100%, rgba(0,200,255,0.16), transparent 60%),
+        radial-gradient(ellipse 500px 400px at 60% 40%,  rgba(235,4,0,0.10), transparent 65%);
+      pointer-events: none;
     }
 
     .app {
+      position: relative;
+      z-index: 1;
       display: grid;
       grid-template-columns: var(--sidebar-w) 1fr var(--chat-w);
       height: 100vh;
@@ -36,69 +50,98 @@
 
     /* ── Sidebar ── */
     .sidebar {
-      background: var(--bg-raised);
-      border-right: 1px solid var(--border);
+      background: rgba(20, 20, 26, 0.5);
+      backdrop-filter: blur(20px) saturate(150%);
+      -webkit-backdrop-filter: blur(20px) saturate(150%);
+      border-right: 1px solid rgba(255,255,255,0.08);
       display: flex;
       flex-direction: column;
       overflow: hidden;
     }
 
     .sidebar-header {
-      padding: 14px 16px 10px;
-      border-bottom: 1px solid var(--border);
+      padding: 16px 16px 12px;
       flex-shrink: 0;
     }
 
     .logo {
-      font-size: 17px;
-      font-weight: 800;
-      color: var(--accent);
-      letter-spacing: -0.3px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
 
-    /* Tabs */
+    .logo-mark {
+      width: 22px;
+      height: 22px;
+      border-radius: 6px;
+      background: var(--accent);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 800;
+      flex-shrink: 0;
+    }
+
+    .logo-text {
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: -0.2px;
+      color: var(--text);
+    }
+
+    /* Tabs — segmented control */
     .tabs {
       display: flex;
-      border-bottom: 1px solid var(--border);
+      gap: 3px;
+      padding: 0 10px 10px;
       flex-shrink: 0;
     }
 
     .tab {
       flex: 1;
-      padding: 9px 0;
+      padding: 6px 0;
       background: none;
       border: none;
-      border-bottom: 2px solid transparent;
+      border-radius: 6px;
       color: var(--text-muted);
-      font-size: 12px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
+      font-size: 12.5px;
+      font-weight: 600;
       cursor: pointer;
-      transition: color 0.15s, border-color 0.15s;
-      margin-bottom: -1px;
+      transition: background 0.12s, color 0.12s;
     }
 
     .tab.active {
-      color: var(--accent);
-      border-bottom-color: var(--accent);
+      background: rgba(255,255,255,0.08);
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08);
+      color: var(--text);
     }
 
     .tab:hover:not(.active) { color: var(--text); }
 
     /* Search */
     .search-wrap {
-      padding: 8px 10px;
-      border-bottom: 1px solid var(--border);
+      position: relative;
+      padding: 0 10px 8px;
       flex-shrink: 0;
+    }
+
+    .search-icon {
+      position: absolute;
+      left: 20px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-muted);
+      pointer-events: none;
     }
 
     .search-input {
       width: 100%;
-      background: var(--bg-hover);
-      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.08);
       border-radius: 6px;
-      padding: 6px 10px;
+      padding: 6px 10px 6px 30px;
       color: var(--text);
       font-size: 13px;
       outline: none;
@@ -108,14 +151,55 @@
     .search-input:focus { border-color: var(--accent); }
     .search-input::placeholder { color: var(--text-muted); }
 
+    /* Quick watch */
+    .quick-watch {
+      display: flex;
+      gap: 4px;
+      padding: 0 10px 12px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .quick-watch input {
+      flex: 1;
+      min-width: 0;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 6px;
+      padding: 6px 10px;
+      color: var(--text);
+      font-size: 13px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    .quick-watch input:focus { border-color: var(--accent); }
+    .quick-watch input::placeholder { color: var(--text-muted); }
+
+    .quick-watch button {
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 6px;
+      color: var(--text-muted);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 30px;
+      flex-shrink: 0;
+      transition: color 0.12s, background 0.12s;
+    }
+
+    .quick-watch button:hover { color: var(--accent); background: rgba(255,255,255,0.09); }
+
     /* Section labels */
     .section-label {
       font-size: 10px;
       font-weight: 700;
       text-transform: uppercase;
-      letter-spacing: 1px;
+      letter-spacing: 0.8px;
       color: var(--text-muted);
-      padding: 10px 16px 4px;
+      opacity: 0.7;
+      padding: 12px 16px 4px;
     }
 
     /* Channel list */
@@ -129,16 +213,17 @@
       display: flex;
       align-items: center;
       gap: 10px;
-      padding: 7px 8px 7px 14px;
+      padding: 7px 8px 7px 12px;
       margin: 1px 6px;
       border-radius: 6px;
+      border-left: 2px solid transparent;
       cursor: pointer;
-      transition: background 0.1s;
+      transition: background 0.1s, border-color 0.1s;
       user-select: none;
     }
 
-    .channel-item:hover  { background: var(--bg-hover); }
-    .channel-item.active { background: var(--bg-hover); }
+    .channel-item:hover  { background: rgba(255,255,255,0.06); }
+    .channel-item.active { background: rgba(255,255,255,0.08); border-left-color: var(--accent); }
 
     .avatar {
       width: 32px;
@@ -166,14 +251,31 @@
 
     .channel-item.active .avatar { box-shadow: 0 0 0 2px var(--accent); }
 
+    .ch-info {
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      min-width: 0;
+      gap: 1px;
+    }
+
     .ch-name {
       font-size: 13px;
       font-weight: 600;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      flex: 1;
     }
+
+    .ch-meta {
+      font-size: 11px;
+      color: var(--text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .ch-viewers { opacity: 0.75; }
 
     .channel-item.active .ch-name { color: var(--accent); }
 
@@ -213,8 +315,54 @@
       color: var(--text-muted);
     }
 
-    .channel-list::-webkit-scrollbar { width: 4px; }
-    .channel-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+    .channel-list {
+      scrollbar-width: thin;
+      scrollbar-color: rgba(255,255,255,0.16) transparent;
+    }
+    .channel-list::-webkit-scrollbar { width: 6px; }
+    .channel-list::-webkit-scrollbar-track { background: transparent; }
+    .channel-list::-webkit-scrollbar-thumb {
+      background: rgba(255,255,255,0.16);
+      border-radius: 999px;
+      border: 1.5px solid transparent;
+      background-clip: padding-box;
+      transition: background 0.15s;
+    }
+    .channel-list::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.32); }
+
+    /* Tooltip custom (titre du stream au hover) */
+    .ch-tooltip {
+      position: fixed;
+      z-index: 50;
+      max-width: 260px;
+      background: rgba(255, 255, 255, 0.08);
+      backdrop-filter: blur(16px) saturate(180%);
+      -webkit-backdrop-filter: blur(16px) saturate(180%);
+      border: 1px solid rgba(255,255,255,0.14);
+      border-radius: 8px;
+      padding: 7px 11px;
+      font-size: 12.5px;
+      font-weight: 600;
+      line-height: 1.35;
+      color: var(--text);
+      box-shadow: 0 10px 28px rgba(0,0,0,0.5);
+      pointer-events: none;
+      opacity: 0;
+      transform: translate(-6px, -50%) scale(0.95);
+      transition: opacity 0.1s ease, transform 0.12s ease;
+    }
+
+    .ch-tooltip.on {
+      opacity: 1;
+      transform: translate(0, -50%) scale(1);
+    }
+
+    .ch-tooltip-viewers {
+      margin-top: 3px;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
 
     /* ── Main ── */
     .main {
@@ -263,17 +411,39 @@
 
     @keyframes spin { to { transform: rotate(360deg); } }
 
-    /* info bar */
-    .info-bar {
-      background: var(--bg-raised);
-      border-top: 1px solid var(--border);
-      padding: 0 16px;
+    /* Barre de contrôle du player — overlay en hover, par-dessus le stream */
+    .player-controls {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 10;
+      background: rgba(20, 20, 26, 0.55);
+      backdrop-filter: blur(20px) saturate(150%);
+      -webkit-backdrop-filter: blur(20px) saturate(150%);
+      border-top: 1px solid rgba(255,255,255,0.08);
+      padding: 0 12px;
       height: 44px;
       display: flex;
       align-items: center;
       gap: 12px;
-      flex-shrink: 0;
+      opacity: 0;
+      transform: translateY(6px);
+      transition: opacity 0.18s, transform 0.18s;
+      pointer-events: none;
     }
+
+    .player-wrapper:hover .player-controls {
+      opacity: 1;
+      transform: translateY(0);
+      pointer-events: auto;
+    }
+
+    @media (hover: none) {
+      .player-controls { opacity: 0.92; transform: translateY(0); pointer-events: auto; }
+    }
+
+    .player-controls-spacer { flex: 1; min-width: 0; }
 
     .ctrl-btn {
       background: none;
@@ -339,12 +509,16 @@
 
     .live-badge.on  { display: block; }
     .info-channel   { font-size: 14px; font-weight: 700; }
+    .info-title     { font-size: 12px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .info-viewers   { font-size: 12px; color: var(--text-muted); white-space: nowrap; flex-shrink: 0; }
     .info-hint      { font-size: 12px; color: var(--text-muted); }
 
     /* ── Chat ── */
     .chat-panel {
-      background: var(--bg-raised);
-      border-left: 1px solid var(--border);
+      background: rgba(20, 20, 26, 0.5);
+      backdrop-filter: blur(20px) saturate(150%);
+      -webkit-backdrop-filter: blur(20px) saturate(150%);
+      border-left: 1px solid rgba(255,255,255,0.08);
       display: flex;
       flex-direction: column;
     }
@@ -419,30 +593,32 @@
     }
     #debug-copy:hover { background: rgba(145,71,255,0.35); }
 
-    /* ── Fullscreen button ── */
-    .fs-btn {
-      position: absolute;
-      top: 10px;
-      right: 10px;
-      z-index: 10;
-      background: rgba(0,0,0,0.55);
+    /* Fullscreen / cinéma — boutons inline dans .player-controls */
+    .fs-btn, .cinema-btn {
+      background: none;
       border: none;
-      border-radius: 6px;
-      color: #fff;
+      color: var(--text);
       cursor: pointer;
-      padding: 7px;
+      padding: 4px;
+      border-radius: 4px;
       display: flex;
       align-items: center;
       justify-content: center;
-      opacity: 0;
-      transition: opacity 0.18s, background 0.15s;
+      flex-shrink: 0;
+      transition: color 0.1s;
     }
-    .fs-btn:hover { background: rgba(0,0,0,0.85); }
-    .player-wrapper:hover .fs-btn { opacity: 1; }
+    .fs-btn:hover, .cinema-btn:hover { color: var(--accent); }
+    .fs-btn svg, .cinema-btn svg     { width: 18px; height: 18px; }
+    .cinema-btn.active { color: var(--accent); }
 
-    /* Always visible on touch devices (no hover) */
-    @media (hover: none) {
-      .fs-btn { opacity: 0.75; }
+    /* ── Cinema mode: hide sidebar, keep chat ── */
+    .app.cinema-mode {
+      grid-template-columns: 0 1fr var(--chat-w);
+    }
+    .app.cinema-mode .sidebar {
+      overflow: hidden;
+      border-right: none;
+      visibility: hidden;
     }
 
     /* Ensure video fills fullscreen properly */
@@ -462,7 +638,10 @@
 
   <aside class="sidebar">
     <div class="sidebar-header">
-      <div class="logo">TwitchOSS</div>
+      <div class="logo">
+        <span class="logo-mark">T</span>
+        <span class="logo-text">TwitchOSS</span>
+      </div>
     </div>
 
     <div class="tabs">
@@ -470,13 +649,19 @@
       <button class="tab"        id="tab-iptv"   onclick="switchTab('iptv')">Chaînes TV</button>
     </div>
 
-    <button onclick="watchFeed()" title="Le direct poussé depuis le PC maison (matchs, etc.)"
-      style="margin:8px 10px;padding:9px;background:var(--live);color:#fff;border:none;border-radius:6px;font-weight:700;cursor:pointer;font-size:13px">
-      📡 Regarder le direct maison
-    </button>
-
     <div class="search-wrap">
+      <svg class="search-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
       <input class="search-input" id="search-input" type="text" placeholder="Rechercher…" oninput="onSearch(this.value)">
+    </div>
+
+    <div class="quick-watch" id="quick-watch">
+      <input id="quick-watch-input" type="text" placeholder="Chaîne Twitch…" onkeydown="if(event.key==='Enter')quickWatch(false)">
+      <button onclick="quickWatch(false)" title="Regarder sans enregistrer">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+      </button>
+      <button onclick="quickWatch(true)" title="Enregistrer dans la liste et regarder">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+      </button>
     </div>
 
     <div class="channel-list" id="twitch-list"></div>
@@ -484,6 +669,8 @@
       <div class="list-hint">Chargement…</div>
     </div>
   </aside>
+
+  <div class="ch-tooltip" id="ch-tooltip"></div>
 
   <main class="main">
     <div class="player-wrapper">
@@ -501,31 +688,37 @@
       </div>
       <video id="video" playsinline></video>
       <div id="debug-panel"></div>
-      <button class="fs-btn" id="btn-fs" onclick="toggleFullscreen()" title="Plein écran (F)">
-        <svg id="icon-fs-enter" viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-          <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
-        </svg>
-        <svg id="icon-fs-exit" viewBox="0 0 24 24" width="20" height="20" fill="currentColor" style="display:none">
-          <path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"/>
-        </svg>
-      </button>
-    </div>
-    <div class="info-bar">
-      <button class="ctrl-btn" id="btn-playpause" onclick="togglePlay()" title="Espace">
-        <svg id="icon-play"  viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-        <svg id="icon-pause" viewBox="0 0 24 24" style="display:none"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
-      </button>
-      <div class="volume-group">
-        <button class="ctrl-btn" id="btn-mute" onclick="toggleMute()" title="M">
-          <svg id="icon-vol"  viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 7.97v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/></svg>
-          <svg id="icon-mute" viewBox="0 0 24 24" style="display:none"><path d="M16.5 12A4.5 4.5 0 0 0 14 7.97v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06A8.99 8.99 0 0 0 17.73 19l2 2L21 19.73l-18-18zM12 4L9.91 6.09 12 8.18V4z"/></svg>
+      <div class="player-controls" id="player-controls">
+        <button class="ctrl-btn" id="btn-playpause" onclick="togglePlay()" title="Espace">
+          <svg id="icon-play"  viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+          <svg id="icon-pause" viewBox="0 0 24 24" style="display:none"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
         </button>
-        <input class="volume-slider" id="volume-slider" type="range" min="0" max="1" step="0.02" value="1" oninput="setVolume(this.value)">
+        <div class="volume-group">
+          <button class="ctrl-btn" id="btn-mute" onclick="toggleMute()" title="M">
+            <svg id="icon-vol"  viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 7.97v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/></svg>
+            <svg id="icon-mute" viewBox="0 0 24 24" style="display:none"><path d="M16.5 12A4.5 4.5 0 0 0 14 7.97v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06A8.99 8.99 0 0 0 17.73 19l2 2L21 19.73l-18-18zM12 4L9.91 6.09 12 8.18V4z"/></svg>
+          </button>
+          <input class="volume-slider" id="volume-slider" type="range" min="0" max="1" step="0.02" value="1" oninput="setVolume(this.value)">
+        </div>
+        <div class="separator"></div>
+        <span class="live-badge" id="live-badge">EN DIRECT</span>
+        <span class="info-channel" id="info-channel">—</span>
+        <span class="info-title"   id="info-title"></span>
+        <span class="info-viewers" id="info-viewers"></span>
+        <span class="info-hint"    id="info-hint"></span>
+        <div class="player-controls-spacer"></div>
+        <button class="cinema-btn" id="btn-cinema" onclick="toggleCinemaMode()" title="Mode cinéma (T)">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M21 3H3a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h18a1 1 0 0 0 1-1V4a1 1 0 0 0-1-1zm-1 9H4V5h16v7z"/></svg>
+        </button>
+        <button class="fs-btn" id="btn-fs" onclick="toggleFullscreen()" title="Plein écran (F)">
+          <svg id="icon-fs-enter" viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+            <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
+          </svg>
+          <svg id="icon-fs-exit" viewBox="0 0 24 24" width="20" height="20" fill="currentColor" style="display:none">
+            <path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"/>
+          </svg>
+        </button>
       </div>
-      <div class="separator"></div>
-      <span class="live-badge" id="live-badge">EN DIRECT</span>
-      <span class="info-channel" id="info-channel">—</span>
-      <span class="info-hint"    id="info-hint"></span>
     </div>
   </main>
 
@@ -554,6 +747,17 @@
   let _currentIptvIdx = null;
   let _currentTab     = 'twitch';
   let _searchQuery    = '';
+
+  // ── Lien partageable (?ch=<twitch> ou ?tv=<tvg_id>) ─
+  const _urlParams       = new URLSearchParams(location.search);
+  const _deepLinkChannel = _urlParams.get('ch');
+  const _deepLinkIptv    = _urlParams.get('tv');
+  const _hasDeepLink     = !!(_deepLinkChannel || _deepLinkIptv);
+
+  function updateUrl(params) {
+    const qs = new URLSearchParams(params).toString();
+    history.replaceState(null, '', qs ? `?${qs}` : location.pathname);
+  }
 
   // ── Debug ──────────────────────────────────────────
   const _dbg = {
@@ -665,6 +869,16 @@
     localStorage.setItem('twitchoss_favs_iptv',   JSON.stringify([..._favsIptv]));
   }
 
+  // ── Usage tracking (fait remonter les chaînes qu'on regarde souvent,
+  // indépendamment de l'épingle ★ manuelle) ──────────
+  const _usageTwitch = JSON.parse(localStorage.getItem('twitchoss_usage_twitch') || '{}');
+  const _usageIptv    = JSON.parse(localStorage.getItem('twitchoss_usage_iptv')   || '{}');
+
+  function trackUsage(store, key, storageKey) {
+    store[key] = (store[key] || 0) + 1;
+    localStorage.setItem(storageKey, JSON.stringify(store));
+  }
+
   // ── Indicateur de débit ────────────────────────────
   function _showSpeedHint(ratio, dl_kbps) {
     const hint = document.getElementById('info-hint');
@@ -750,6 +964,24 @@
     }
   }
 
+  // ── Format helpers ─────────────────────────────────
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  function fmtViewers(n) {
+    if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
+    return String(n);
+  }
+
+  function updateInfoBar() {
+    const info  = _activeType === 'twitch' ? _info[_activeChannel] : null;
+    const title = info?.live && info?.title ? info.title : '';
+    document.getElementById('info-title').textContent = title;
+    document.getElementById('info-viewers').textContent =
+      info?.live && info?.viewers ? `${fmtViewers(info.viewers)} viewers` : '';
+  }
+
   // ── Tabs & search ──────────────────────────────────
   function switchTab(tab) {
     _currentTab  = tab;
@@ -759,6 +991,31 @@
     document.getElementById('tab-iptv').classList.toggle('active',   tab === 'iptv');
     document.getElementById('twitch-list').style.display = tab === 'twitch' ? '' : 'none';
     document.getElementById('iptv-list').style.display   = tab === 'iptv'   ? '' : 'none';
+    document.getElementById('quick-watch').style.display  = tab === 'twitch' ? '' : 'none';
+  }
+
+  // ── Quick watch (chaîne pas forcément dans la liste) ─
+  async function quickWatch(save) {
+    const input = document.getElementById('quick-watch-input');
+    const name  = input.value.trim().toLowerCase().replace(/^@/, '');
+    if (!name) return;
+
+    if (save) {
+      try {
+        const r = await fetch('/channels/add', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ channel: name }),
+        }).then(r => r.json());
+        if (r.error) { alert(r.error); return; }
+        _channels = r.channels;
+        renderTwitchList();
+        refreshChannelInfoOnce();
+      } catch {}
+    }
+
+    input.value = '';
+    selectChannel(name);
   }
 
   function onSearch(val) {
@@ -777,7 +1034,9 @@
       .filter(ch => !_favsTwitch.has(ch) && match(ch))
       .sort((a, b) => {
         const diff = (_info[b]?.live ? 1 : 0) - (_info[a]?.live ? 1 : 0);
-        return diff || a.localeCompare(b);
+        if (diff) return diff;
+        const usageDiff = (_usageTwitch[b] || 0) - (_usageTwitch[a] || 0);
+        return usageDiff || a.localeCompare(b);
       });
 
     const twitchItem = (ch) => {
@@ -789,9 +1048,17 @@
       const imgTag   = info?.avatar
         ? `<img src="${info.avatar}" alt="" onerror="this.style.display='none'">`
         : '';
-      return `<div class="channel-item${isActive ? ' active' : ''}" data-ch="${ch}" onclick="selectChannel('${ch}')">
+      const viewersStr = isLive && info?.viewers ? `${fmtViewers(info.viewers)} viewers` : '';
+      const titleAttr   = isLive && info?.title ? ` data-title="${escapeHtml(info.title)}"` : '';
+      const viewersAttr = viewersStr ? ` data-viewers="${escapeHtml(viewersStr)}"` : '';
+      const category = isLive && info?.game ? escapeHtml(info.game) : '';
+      return `<div class="channel-item${isActive ? ' active' : ''}" data-ch="${ch}" onclick="selectChannel('${ch}')"${titleAttr}${viewersAttr}>
         <div class="avatar" style="background:hsl(${hue},60%,45%)">${ch[0].toUpperCase()}${imgTag}</div>
-        <span class="ch-name">${ch}</span>
+        <div class="ch-info">
+          <span class="ch-name">${ch}</span>
+          ${category ? `<span class="ch-meta">${category}</span>` : ''}
+          ${viewersStr ? `<span class="ch-meta ch-viewers">${viewersStr}</span>` : ''}
+        </div>
         <span class="live-dot${isLive ? ' on' : ''}"></span>
         <button class="star-btn${isFav ? ' pinned' : ''}"
           onclick="event.stopPropagation();toggleFavTwitch('${ch}')"
@@ -813,7 +1080,9 @@
     const match = ch => !q || ch.name.toLowerCase().includes(q);
 
     const favs = _iptvChannels.filter(ch => _favsIptv.has(_iptvKey(ch)) && match(ch));
-    const rest  = _iptvChannels.filter(ch => !_favsIptv.has(_iptvKey(ch)) && match(ch));
+    const rest  = _iptvChannels
+      .filter(ch => !_favsIptv.has(_iptvKey(ch)) && match(ch))
+      .sort((a, b) => (_usageIptv[_iptvKey(b)] || 0) - (_usageIptv[_iptvKey(a)] || 0));
 
     const iptvItem = (ch) => {
       const idx      = _iptvChannels.indexOf(ch);
@@ -857,14 +1126,35 @@
   async function loadChannels() {
     _channels = await fetch('/channels').then(r => r.json());
     renderTwitchList();
-    fetchChannelInfo();
+    await fetchChannelInfo();
+    if (_deepLinkChannel) selectChannel(_deepLinkChannel);
+    else autoSelectDefaultChannel();
   }
 
-  async function fetchChannelInfo() {
+  // Choisit automatiquement une chaîne en ligne au chargement de la page :
+  // priorité aux favoris (au hasard parmi ceux en live), sinon une chaîne
+  // au hasard parmi les autres en live. Ne fait rien si l'utilisateur a
+  // déjà cliqué sur une chaîne pendant le chargement, ou si l'URL pointe
+  // déjà vers une chaîne précise (lien partagé).
+  function autoSelectDefaultChannel() {
+    if (_activeChannel || _hasDeepLink) return;
+    const liveFavs   = _channels.filter(ch => _favsTwitch.has(ch) && _info[ch]?.live);
+    const liveOthers = _channels.filter(ch => !_favsTwitch.has(ch) && _info[ch]?.live);
+    const pool = liveFavs.length ? liveFavs : liveOthers;
+    if (!pool.length) return;
+    selectChannel(pool[Math.floor(Math.random() * pool.length)]);
+  }
+
+  async function refreshChannelInfoOnce() {
     try {
       _info = await fetch('/channel-info').then(r => r.json());
       renderTwitchList();
+      updateInfoBar();
     } catch {}
+  }
+
+  async function fetchChannelInfo() {
+    await refreshChannelInfoOnce();
     setTimeout(fetchChannelInfo, 120_000);
   }
 
@@ -875,6 +1165,13 @@
       _iptvChannels = [];
     }
     renderIptvList();
+    if (_deepLinkIptv && !_activeChannel) {
+      const idx = _iptvChannels.findIndex(c => c.tvg_id === _deepLinkIptv);
+      if (idx !== -1) {
+        switchTab('iptv');
+        selectIptvChannel(idx);
+      }
+    }
   }
 
   // ── Overlays ───────────────────────────────────────
@@ -918,9 +1215,12 @@
   async function selectChannel(channel) {
     _activeChannel = channel;
     _activeType    = 'twitch';
+    trackUsage(_usageTwitch, channel, 'twitchoss_usage_twitch');
     renderTwitchList();
+    updateUrl({ ch: channel });
     document.getElementById('info-channel').textContent = channel;
     document.getElementById('info-hint').textContent    = '';
+    updateInfoBar();
     setLive(false);
     destroyHls();
     showOverlay('loading');
@@ -932,32 +1232,17 @@
     startHls('/hls/playlist.m3u8');
   }
 
-  // Regarde le direct poussé par le feeder maison. Ne (re)démarre RIEN côté VPS :
-  // charge juste le HLS déjà alimenté, pour qu'un pote ne coupe pas le flux du host.
-  async function watchFeed() {
-    _activeChannel = 'feed';
-    _activeType    = 'feed';
-    renderIptvList();
-    document.getElementById('info-channel').textContent = 'Direct maison';
-    document.getElementById('info-hint').textContent    = '';
-    setLive(false);
-    destroyHls();
-    showOverlay('loading');
-    setChatMode('iptv', null);
-    document.getElementById('loading-msg').textContent = 'Connexion au direct maison…';
-    const ready = await waitForPlaylist('/hls/playlist.m3u8');
-    if (!ready) { showOverlay('error', 'Pas de direct maison en ce moment'); return; }
-    startHls('/hls/playlist.m3u8');
-  }
-
   async function selectIptvChannel(idx) {
     const ch = _iptvChannels[idx];
     _activeChannel  = 'iptv:' + idx;
     _activeType     = 'iptv';
     _currentIptvIdx = idx;
+    trackUsage(_usageIptv, _iptvKey(ch), 'twitchoss_usage_iptv');
     renderIptvList();
+    updateUrl({ tv: ch.tvg_id });
     document.getElementById('info-channel').textContent = ch.name;
     document.getElementById('info-hint').textContent    = '';
+    updateInfoBar();
     setLive(false);
     destroyHls();
     showOverlay('loading');
@@ -1013,6 +1298,16 @@
     return false;
   }
 
+  // Les navigateurs bloquent l'autoplay avec le son sans interaction utilisateur
+  // (ex: sélection automatique au chargement de la page) -> on retente en muet.
+  function attemptAutoplay(video) {
+    video.play().catch(() => {
+      video.muted = true;
+      updateVolumeUI(video);
+      video.play().catch(e => dbgLog('warn', `play() refusé même en muet: ${e.message}`));
+    });
+  }
+
   function startHls(playlist) {
     const video = document.getElementById('video');
     const src   = `${location.origin}${playlist}`;
@@ -1057,7 +1352,7 @@
         dbgLog('ok', `manifest OK — niveaux: ${data.levels?.length ?? '?'}`);
         showOverlay('none');
         setLive(true);
-        video.play().catch(e => dbgLog('warn', `play() refusé: ${e.message}`));
+        attemptAutoplay(video);
       });
 
       hls.on(Hls.Events.FRAG_LOADING, (_, data) => {
@@ -1110,7 +1405,7 @@
       video.addEventListener('loadedmetadata', () => {
         showOverlay('none');
         setLive(true);
-        video.play();
+        attemptAutoplay(video);
       }, { once: true });
     } else {
       showOverlay('error', 'Navigateur non supporté');
@@ -1160,7 +1455,16 @@
     if (e.code === 'ArrowUp')   { e.preventDefault(); setVolume(Math.min(1, v.volume + 0.1)); }
     if (e.code === 'ArrowDown') { e.preventDefault(); setVolume(Math.max(0, v.volume - 0.1)); }
     if (e.code === 'KeyF')      { toggleFullscreen(); }
+    if (e.code === 'KeyT')      { toggleCinemaMode(); }
   });
+
+  // ── Cinema mode ────────────────────────────────────
+  let _cinemaMode = false;
+  function toggleCinemaMode() {
+    _cinemaMode = !_cinemaMode;
+    document.querySelector('.app').classList.toggle('cinema-mode', _cinemaMode);
+    document.getElementById('btn-cinema').classList.toggle('active', _cinemaMode);
+  }
 
   // ── Fullscreen ─────────────────────────────────────
   function toggleFullscreen() {
@@ -1187,7 +1491,41 @@
     if (ch) window.open(`https://www.twitch.tv/popout/${ch}/chat?popout=`, '_blank', 'width=340,height=700');
   }
 
+  // ── Tooltip custom (titre du stream au hover) ───────
+  function setupChannelTooltip() {
+    const tooltip = document.getElementById('ch-tooltip');
+    const list    = document.getElementById('twitch-list');
+
+    list.addEventListener('mouseover', (e) => {
+      const item = e.target.closest('.channel-item');
+      if (!item || !item.dataset.title) return;
+      const rect = item.getBoundingClientRect();
+      tooltip.innerHTML = '';
+      const titleEl = document.createElement('div');
+      titleEl.textContent = item.dataset.title;
+      tooltip.appendChild(titleEl);
+      if (item.dataset.viewers) {
+        const viewersEl = document.createElement('div');
+        viewersEl.className = 'ch-tooltip-viewers';
+        viewersEl.textContent = item.dataset.viewers;
+        tooltip.appendChild(viewersEl);
+      }
+      tooltip.style.left = `${rect.right + 8}px`;
+      tooltip.style.top  = `${rect.top + rect.height / 2}px`;
+      tooltip.classList.add('on');
+    });
+
+    list.addEventListener('mouseout', (e) => {
+      const item = e.target.closest('.channel-item');
+      if (!item || item.contains(e.relatedTarget)) return;
+      tooltip.classList.remove('on');
+    });
+
+    list.addEventListener('scroll', () => tooltip.classList.remove('on'));
+  }
+
   // ───────────────────────────────────────────────────
+  setupChannelTooltip();
   loadChannels();
   loadIptvChannels();
   showOverlay('idle');
