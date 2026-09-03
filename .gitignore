@@ -4,3 +4,4 @@ __pycache__/
 .env
 feeder.bat
 feeder.sh
+iptv_blocklist.json
