@@ -8,6 +8,7 @@ app = Flask(__name__)
 STREAMLINK = "/home/ubuntu/twitchoss-env/bin/streamlink"
 BASE_DIR   = Path(os.path.abspath(__file__)).parent
 CHANNELS_FILE = BASE_DIR / "channels.txt"
+ZEVENT_FILE   = BASE_DIR / "zevent_channels.json"
 HLS_DIR    = BASE_DIR / "hls"
 
 _lock    = threading.Lock()
@@ -130,6 +131,53 @@ def read_channels():
         return []
 
 
+def read_zevent_channels():
+    try:
+        return json.loads(ZEVENT_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+
+
+def _fetch_twitch_info(logins):
+    """Interroge l'API GQL Twitch par lots de 100 logins en parallèle (limite de taille de requête)."""
+    import requests as req
+
+    def _one(batch):
+        query = {
+            "query": "query($logins:[String!]){users(logins:$logins){login profileImageURL(width:70) stream{id title viewersCount game{name}}}}",
+            "variables": {"logins": batch},
+        }
+        r = req.post(
+            "https://gql.twitch.tv/gql",
+            json=query,
+            headers={"Client-ID": "kimne78kx3ncx6brgo4mv6wki5h1ko"},
+            timeout=8,
+        )
+        users = r.json()["data"]["users"]
+        return {
+            u["login"].lower(): {
+                "live":    u["stream"] is not None,
+                "avatar":  u.get("profileImageURL") or "",
+                "title":   (u["stream"] or {}).get("title") or "",
+                "viewers": (u["stream"] or {}).get("viewersCount") or 0,
+                "game":    ((u["stream"] or {}).get("game") or {}).get("name") or "",
+            }
+            for u in users
+            if u is not None
+        }
+
+    batches = [logins[i:i + 100] for i in range(0, len(logins), 100)]
+    result = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, len(batches)) or 1) as ex:
+        futs = [ex.submit(_one, b) for b in batches]
+        for f in concurrent.futures.as_completed(futs, timeout=15):
+            try:
+                result.update(f.result())
+            except Exception:
+                pass
+    return result
+
+
 # ── Routes statiques ──────────────────────────────────────────────────────────
 
 @app.route("/")
@@ -188,6 +236,22 @@ def channel_info():
         })
     except Exception:
         return jsonify({ch: {"live": False, "avatar": "", "title": "", "viewers": 0, "game": ""} for ch in chs})
+
+
+@app.route("/zevent-channels")
+def zevent_channels():
+    return jsonify(read_zevent_channels())
+
+
+@app.route("/channel-info-zevent")
+def channel_info_zevent():
+    logins = [c["login"] for c in read_zevent_channels()]
+    if not logins:
+        return jsonify({})
+    try:
+        return jsonify(_fetch_twitch_info(logins))
+    except Exception:
+        return jsonify({ch: {"live": False, "avatar": "", "title": "", "viewers": 0, "game": ""} for ch in logins})
 
 
 @app.route("/hls/<path:filename>")

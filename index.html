@@ -691,6 +691,7 @@
     <div class="tabs">
       <button class="tab active" id="tab-twitch" onclick="switchTab('twitch')">Twitch</button>
       <button class="tab"        id="tab-iptv"   onclick="switchTab('iptv')">Chaînes TV</button>
+      <button class="tab"        id="tab-zevent" onclick="switchTab('zevent')">ZEvent</button>
     </div>
 
     <div class="search-wrap">
@@ -710,6 +711,9 @@
 
     <div class="channel-list" id="twitch-list"></div>
     <div class="channel-list" id="iptv-list" style="display:none">
+      <div class="list-hint">Chargement…</div>
+    </div>
+    <div class="channel-list" id="zevent-list" style="display:none">
       <div class="list-hint">Chargement…</div>
     </div>
   </aside>
@@ -792,6 +796,7 @@
   let _channels    = [];
   let _info        = {};
   let _iptvChannels = []; // [{name, url, logo}]
+  let _zeventChannels = []; // [{login, display, amount}]
   let _activeChannel  = null;
   let _activeType     = null; // 'twitch' | 'iptv'
   let _currentIptvIdx = null;
@@ -1039,8 +1044,10 @@
     document.getElementById('search-input').value = '';
     document.getElementById('tab-twitch').classList.toggle('active', tab === 'twitch');
     document.getElementById('tab-iptv').classList.toggle('active',   tab === 'iptv');
+    document.getElementById('tab-zevent').classList.toggle('active', tab === 'zevent');
     document.getElementById('twitch-list').style.display = tab === 'twitch' ? '' : 'none';
     document.getElementById('iptv-list').style.display   = tab === 'iptv'   ? '' : 'none';
+    document.getElementById('zevent-list').style.display = tab === 'zevent' ? '' : 'none';
     document.getElementById('quick-watch').style.display  = tab === 'twitch' ? '' : 'none';
   }
 
@@ -1071,6 +1078,7 @@
   function onSearch(val) {
     _searchQuery = val.toLowerCase();
     if (_currentTab === 'twitch') renderTwitchList();
+    else if (_currentTab === 'zevent') renderZeventList();
     else renderIptvList();
   }
 
@@ -1122,6 +1130,59 @@
     document.getElementById('twitch-list').innerHTML = html || '<div class="list-hint">Aucun résultat</div>';
   }
 
+  // ── Render: ZEvent ─────────────────────────────────
+  function fmtAmount(n) {
+    return n.toLocaleString('fr-FR') + ' €';
+  }
+
+  function renderZeventList() {
+    const q = _searchQuery;
+    const match = c => !q || c.login.includes(q) || c.display.toLowerCase().includes(q);
+
+    const favs = _zeventChannels.filter(c => _favsTwitch.has(c.login) && match(c));
+    const rest  = _zeventChannels
+      .filter(c => !_favsTwitch.has(c.login) && match(c))
+      .sort((a, b) => {
+        const diff = (_info[b.login]?.live ? 1 : 0) - (_info[a.login]?.live ? 1 : 0);
+        if (diff) return diff;
+        return b.amount - a.amount || a.display.localeCompare(b.display);
+      });
+
+    const zeventItem = (c) => {
+      const ch       = c.login;
+      const hue      = [...ch].reduce((a, code) => a + code.charCodeAt(0), 0) % 360;
+      const info     = _info[ch];
+      const isLive   = info?.live ?? false;
+      const isActive = _activeType === 'twitch' && ch === _activeChannel;
+      const isFav    = _favsTwitch.has(ch);
+      const imgTag   = info?.avatar
+        ? `<img src="${info.avatar}" alt="" onerror="this.style.display='none'">`
+        : '';
+      const viewersStr = isLive && info?.viewers ? `${fmtViewers(info.viewers)} viewers` : '';
+      const titleAttr   = isLive && info?.title ? ` data-title="${escapeHtml(info.title)}"` : '';
+      const viewersAttr = viewersStr ? ` data-viewers="${escapeHtml(viewersStr)}"` : '';
+      const category = isLive && info?.game ? escapeHtml(info.game) : '';
+      const amountStr = c.amount ? fmtAmount(c.amount) : '';
+      return `<div class="channel-item${isActive ? ' active' : ''}" data-ch="${ch}" onclick="selectChannel('${ch}')"${titleAttr}${viewersAttr}>
+        <div class="avatar" style="background:hsl(${hue},60%,45%)">${c.display[0].toUpperCase()}${imgTag}</div>
+        <div class="ch-info">
+          <span class="ch-name">${c.display}</span>
+          ${category ? `<span class="ch-meta">${category}</span>` : ''}
+          ${viewersStr ? `<span class="ch-meta ch-viewers">${viewersStr}</span>` : `<span class="ch-meta">${amountStr}</span>`}
+        </div>
+        <span class="live-dot${isLive ? ' on' : ''}"></span>
+        <button class="star-btn${isFav ? ' pinned' : ''}"
+          onclick="event.stopPropagation();toggleFavTwitch('${ch}')"
+          title="${isFav ? 'Désépingler' : 'Épingler'}">★</button>
+      </div>`;
+    };
+
+    let html = '';
+    if (favs.length) html += '<div class="section-label">Épinglées</div>' + favs.map(zeventItem).join('');
+    if (rest.length) html += (favs.length ? '<div class="section-label">Autres</div>' : '') + rest.map(zeventItem).join('');
+    document.getElementById('zevent-list').innerHTML = html || '<div class="list-hint">Aucun résultat</div>';
+  }
+
   // ── Render: IPTV ───────────────────────────────────
   function _iptvKey(ch) { return ch.sources?.[0] || ch.tvg_id || ch.name; }
 
@@ -1163,6 +1224,7 @@
     if (_favsTwitch.has(ch)) _favsTwitch.delete(ch); else _favsTwitch.add(ch);
     saveFavs();
     renderTwitchList();
+    renderZeventList();
   }
 
   function toggleFavIptv(idx) {
@@ -1197,7 +1259,8 @@
 
   async function refreshChannelInfoOnce() {
     try {
-      _info = await fetch('/channel-info').then(r => r.json());
+      const info = await fetch('/channel-info').then(r => r.json());
+      Object.assign(_info, info);
       renderTwitchList();
       updateInfoBar();
     } catch {}
@@ -1222,6 +1285,30 @@
         selectIptvChannel(idx);
       }
     }
+  }
+
+  async function loadZeventChannels() {
+    try {
+      _zeventChannels = await fetch('/zevent-channels').then(r => r.json());
+    } catch {
+      _zeventChannels = [];
+    }
+    renderZeventList();
+    await fetchZeventInfo();
+  }
+
+  async function refreshZeventInfoOnce() {
+    try {
+      const info = await fetch('/channel-info-zevent').then(r => r.json());
+      Object.assign(_info, info);
+      renderZeventList();
+      updateInfoBar();
+    } catch {}
+  }
+
+  async function fetchZeventInfo() {
+    await refreshZeventInfoOnce();
+    setTimeout(fetchZeventInfo, 120_000);
   }
 
   // ── Overlays ───────────────────────────────────────
@@ -1421,6 +1508,7 @@
     _activeType    = 'twitch';
     trackUsage(_usageTwitch, channel, 'twitchoss_usage_twitch');
     renderTwitchList();
+    renderZeventList();
     updateUrl({ ch: channel });
     document.getElementById('info-channel').textContent = channel;
     document.getElementById('info-hint').textContent    = '';
@@ -1698,8 +1786,10 @@
   // ── Tooltip custom (titre du stream au hover) ───────
   function setupChannelTooltip() {
     const tooltip = document.getElementById('ch-tooltip');
-    const list    = document.getElementById('twitch-list');
+    ['twitch-list', 'zevent-list'].forEach(id => wireChannelTooltip(document.getElementById(id), tooltip));
+  }
 
+  function wireChannelTooltip(list, tooltip) {
     list.addEventListener('mouseover', (e) => {
       const item = e.target.closest('.channel-item');
       if (!item || !item.dataset.title) return;
@@ -1732,6 +1822,7 @@
   setupChannelTooltip();
   loadChannels();
   loadIptvChannels();
+  loadZeventChannels();
   showOverlay('idle');
 </script>
 </body>
