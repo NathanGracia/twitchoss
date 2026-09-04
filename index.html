@@ -1083,19 +1083,23 @@
   }
 
   // ── Render: Twitch ─────────────────────────────────
+  function _sortLiveViewers(getLogin) {
+    return (a, b) => {
+      const ia = _info[getLogin(a)], ib = _info[getLogin(b)];
+      const diff = (ib?.live ? 1 : 0) - (ia?.live ? 1 : 0);
+      if (diff) return diff;
+      return (ib?.viewers || 0) - (ia?.viewers || 0);
+    };
+  }
+
   function renderTwitchList() {
     const q = _searchQuery;
     const match = ch => !q || ch.toLowerCase().includes(q);
 
-    const favs = _channels.filter(ch => _favsTwitch.has(ch) && match(ch));
+    const favs = _channels.filter(ch => _favsTwitch.has(ch) && match(ch)).sort(_sortLiveViewers(ch => ch));
     const rest  = _channels
       .filter(ch => !_favsTwitch.has(ch) && match(ch))
-      .sort((a, b) => {
-        const diff = (_info[b]?.live ? 1 : 0) - (_info[a]?.live ? 1 : 0);
-        if (diff) return diff;
-        const usageDiff = (_usageTwitch[b] || 0) - (_usageTwitch[a] || 0);
-        return usageDiff || a.localeCompare(b);
-      });
+      .sort(_sortLiveViewers(ch => ch));
 
     const twitchItem = (ch) => {
       const hue      = [...ch].reduce((a, c) => a + c.charCodeAt(0), 0) % 360;
@@ -1139,14 +1143,10 @@
     const q = _searchQuery;
     const match = c => !q || c.login.includes(q) || c.display.toLowerCase().includes(q);
 
-    const favs = _zeventChannels.filter(c => _favsTwitch.has(c.login) && match(c));
+    const favs = _zeventChannels.filter(c => _favsTwitch.has(c.login) && match(c)).sort(_sortLiveViewers(c => c.login));
     const rest  = _zeventChannels
       .filter(c => !_favsTwitch.has(c.login) && match(c))
-      .sort((a, b) => {
-        const diff = (_info[b.login]?.live ? 1 : 0) - (_info[a.login]?.live ? 1 : 0);
-        if (diff) return diff;
-        return b.amount - a.amount || a.display.localeCompare(b.display);
-      });
+      .sort(_sortLiveViewers(c => c.login));
 
     const zeventItem = (c) => {
       const ch       = c.login;
