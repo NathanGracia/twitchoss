@@ -309,6 +309,121 @@
     .star-btn.pinned { opacity: 1; color: var(--accent); }
     .star-btn:hover  { color: var(--accent); }
 
+    .mp-btn {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      padding: 3px 5px;
+      line-height: 1;
+      flex-shrink: 0;
+      opacity: 0;
+      transition: opacity 0.12s, color 0.12s;
+      border-radius: 4px;
+    }
+
+    .channel-item:hover .mp-btn { opacity: 1; }
+    .mp-btn.on { opacity: 1; color: var(--accent); }
+    .mp-btn:hover { color: var(--accent); }
+
+    /* ── Multiplex grid (remplace le lecteur vidéo quand l'onglet Multiplex est actif) ── */
+    .multiplex-grid {
+      display: none;
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 14px;
+      align-content: start;
+    }
+
+    .mp-tile {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      cursor: pointer;
+      transition: border-color 0.15s, transform 0.1s;
+    }
+
+    .mp-tile:hover { border-color: var(--accent); transform: translateY(-2px); }
+    .mp-tile.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+
+    .mp-thumb-wrap {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      background: #111;
+    }
+
+    .mp-thumb-wrap img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+    .mp-offline {
+      width: 100%; height: 100%;
+      display: flex; align-items: center; justify-content: center;
+      color: var(--text-muted);
+      font-size: 12.5px;
+    }
+
+    .mp-live-badge {
+      position: absolute; top: 6px; left: 6px;
+      background: var(--live);
+      color: #fff;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.3px;
+      padding: 2px 6px;
+      border-radius: 3px;
+    }
+
+    .mp-viewers {
+      position: absolute; bottom: 6px; left: 6px;
+      background: rgba(0,0,0,0.7);
+      color: #fff;
+      font-size: 11px;
+      padding: 2px 6px;
+      border-radius: 3px;
+    }
+
+    .mp-remove {
+      position: absolute; top: 6px; right: 6px;
+      background: rgba(0,0,0,0.6);
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      width: 20px; height: 20px;
+      font-size: 13px;
+      line-height: 1;
+      cursor: pointer;
+      opacity: 0;
+      transition: opacity 0.12s;
+    }
+
+    .mp-tile:hover .mp-remove { opacity: 1; }
+    .mp-remove:hover { background: var(--live); }
+
+    .mp-name {
+      padding: 8px 10px;
+      font-size: 13px;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .mp-empty {
+      grid-column: 1 / -1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      color: var(--text-muted);
+      font-size: 13.5px;
+      padding: 60px 20px;
+      text-align: center;
+    }
+
     .list-hint {
       padding: 10px 16px;
       font-size: 12px;
@@ -692,6 +807,7 @@
       <button class="tab active" id="tab-twitch" onclick="switchTab('twitch')">Twitch</button>
       <button class="tab"        id="tab-iptv"   onclick="switchTab('iptv')">Chaînes TV</button>
       <button class="tab"        id="tab-zevent" onclick="switchTab('zevent')">ZEvent</button>
+      <button class="tab"        id="tab-multiplex" onclick="switchTab('multiplex')">Multiplex</button>
     </div>
 
     <div class="search-wrap">
@@ -716,6 +832,7 @@
     <div class="channel-list" id="zevent-list" style="display:none">
       <div class="list-hint">Chargement…</div>
     </div>
+    <div class="channel-list" id="multiplex-list" style="display:none"></div>
   </aside>
 
   <div class="ch-tooltip" id="ch-tooltip"></div>
@@ -768,6 +885,7 @@
         </button>
       </div>
     </div>
+    <div class="multiplex-grid" id="multiplex-grid"></div>
   </main>
 
   <aside class="chat-panel">
@@ -925,6 +1043,32 @@
     localStorage.setItem('twitchoss_favs_iptv',   JSON.stringify([..._favsIptv]));
   }
 
+  // ── Sélection multiplex (distincte des favoris ★) : chaînes suivies via
+  // des vignettes qui se rafraîchissent, dans l'onglet Multiplex ──────
+  const _multiplex = new Set(JSON.parse(localStorage.getItem('twitchoss_multiplex') || '[]'));
+
+  function saveMultiplex() {
+    localStorage.setItem('twitchoss_multiplex', JSON.stringify([..._multiplex]));
+  }
+
+  function toggleMultiplex(ch) {
+    if (_multiplex.has(ch)) _multiplex.delete(ch); else _multiplex.add(ch);
+    saveMultiplex();
+    renderTwitchList();
+    renderZeventList();
+    renderMultiplexList();
+    renderMultiplexGrid();
+  }
+
+  function _mpButtonHtml(ch) {
+    const on = _multiplex.has(ch);
+    return `<button class="mp-btn${on ? ' on' : ''}"
+      onclick="event.stopPropagation();toggleMultiplex('${ch}')"
+      title="${on ? 'Retirer du multiplex' : 'Ajouter au multiplex'}">
+      <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M4 4h7v7H4V4zm9 0h7v7h-7V4zM4 13h7v7H4v-7zm9 0h7v7h-7v-7z"/></svg>
+    </button>`;
+  }
+
   // ── Usage tracking (fait remonter les chaînes qu'on regarde souvent,
   // indépendamment de l'épingle ★ manuelle) ──────────
   const _usageTwitch = JSON.parse(localStorage.getItem('twitchoss_usage_twitch') || '{}');
@@ -1046,10 +1190,17 @@
     document.getElementById('tab-twitch').classList.toggle('active', tab === 'twitch');
     document.getElementById('tab-iptv').classList.toggle('active',   tab === 'iptv');
     document.getElementById('tab-zevent').classList.toggle('active', tab === 'zevent');
-    document.getElementById('twitch-list').style.display = tab === 'twitch' ? '' : 'none';
-    document.getElementById('iptv-list').style.display   = tab === 'iptv'   ? '' : 'none';
-    document.getElementById('zevent-list').style.display = tab === 'zevent' ? '' : 'none';
+    document.getElementById('tab-multiplex').classList.toggle('active', tab === 'multiplex');
+    document.getElementById('twitch-list').style.display    = tab === 'twitch'    ? '' : 'none';
+    document.getElementById('iptv-list').style.display      = tab === 'iptv'      ? '' : 'none';
+    document.getElementById('zevent-list').style.display    = tab === 'zevent'    ? '' : 'none';
+    document.getElementById('multiplex-list').style.display = tab === 'multiplex' ? '' : 'none';
     document.getElementById('quick-watch').style.display  = tab === 'twitch' ? '' : 'none';
+
+    // La grille de vignettes remplace le lecteur vidéo tant qu'on est sur l'onglet Multiplex.
+    document.querySelector('.player-wrapper').style.display = tab === 'multiplex' ? 'none' : '';
+    document.getElementById('multiplex-grid').style.display = tab === 'multiplex' ? 'grid' : 'none';
+    if (tab === 'multiplex') { _mpRefreshTs = Date.now(); renderMultiplexList(); renderMultiplexGrid(); }
   }
 
   // ── Quick watch (chaîne pas forcément dans la liste) ─
@@ -1080,6 +1231,7 @@
     _searchQuery = val.toLowerCase();
     if (_currentTab === 'twitch') renderTwitchList();
     else if (_currentTab === 'zevent') renderZeventList();
+    else if (_currentTab === 'multiplex') renderMultiplexList();
     else renderIptvList();
   }
 
@@ -1126,6 +1278,7 @@
         <button class="star-btn${isFav ? ' pinned' : ''}"
           onclick="event.stopPropagation();toggleFavTwitch('${ch}')"
           title="${isFav ? 'Désépingler' : 'Épingler'}">★</button>
+        ${_mpButtonHtml(ch)}
       </div>`;
     };
 
@@ -1175,6 +1328,7 @@
         <button class="star-btn${isFav ? ' pinned' : ''}"
           onclick="event.stopPropagation();toggleFavTwitch('${ch}')"
           title="${isFav ? 'Désépingler' : 'Épingler'}">★</button>
+        ${_mpButtonHtml(ch)}
       </div>`;
     };
 
@@ -1183,6 +1337,90 @@
     if (rest.length) html += (favs.length ? '<div class="section-label">Autres</div>' : '') + rest.map(zeventItem).join('');
     document.getElementById('zevent-list').innerHTML = html || '<div class="list-hint">Aucun résultat</div>';
   }
+
+  // ── Render: Multiplex ───────────────────────────────
+  // Liste latérale (mêmes lignes que les autres onglets, sans section favoris/autres :
+  // c'est déjà une sélection curatée) + grille de vignettes qui remplace le lecteur.
+  function renderMultiplexList() {
+    const q = _searchQuery;
+    const chans = [..._multiplex].filter(ch => !q || ch.includes(q)).sort(_sortLiveViewers(ch => ch));
+
+    const item = (ch) => {
+      const hue      = [...ch].reduce((a, c) => a + c.charCodeAt(0), 0) % 360;
+      const info     = _info[ch];
+      const isLive   = info?.live ?? false;
+      const isActive = _activeType === 'twitch' && ch === _activeChannel;
+      const isFav    = _favsTwitch.has(ch);
+      const imgTag   = info?.avatar
+        ? `<img src="${info.avatar}" alt="" onerror="this.style.display='none'">`
+        : '';
+      const viewersStr = isLive && info?.viewers ? `${fmtViewers(info.viewers)} viewers` : '';
+      const category = isLive && info?.game ? escapeHtml(info.game) : '';
+      return `<div class="channel-item${isActive ? ' active' : ''}" data-ch="${ch}" onclick="selectChannel('${ch}')">
+        <div class="avatar" style="background:hsl(${hue},60%,45%)">${ch[0].toUpperCase()}${imgTag}</div>
+        <div class="ch-info">
+          <span class="ch-name">${ch}</span>
+          ${category ? `<span class="ch-meta">${category}</span>` : ''}
+          ${viewersStr ? `<span class="ch-meta ch-viewers">${viewersStr}</span>` : ''}
+        </div>
+        <span class="live-dot${isLive ? ' on' : ''}"></span>
+        <button class="star-btn${isFav ? ' pinned' : ''}"
+          onclick="event.stopPropagation();toggleFavTwitch('${ch}')"
+          title="${isFav ? 'Désépingler' : 'Épingler'}">★</button>
+        ${_mpButtonHtml(ch)}
+      </div>`;
+    };
+
+    document.getElementById('multiplex-list').innerHTML = chans.length
+      ? chans.map(item).join('')
+      : '<div class="list-hint">Aucune chaîne — clique l\'icône ▦ sur une chaîne (onglet Twitch ou ZEvent) pour l\'ajouter ici</div>';
+  }
+
+  let _mpRefreshTs = Date.now();
+
+  function renderMultiplexGrid() {
+    const chans = [..._multiplex].sort(_sortLiveViewers(ch => ch));
+    const grid = document.getElementById('multiplex-grid');
+
+    if (!chans.length) {
+      grid.innerHTML = `<div class="mp-empty">
+        <div style="font-size:28px;opacity:0.3">▦</div>
+        <div>Aucune chaîne dans le multiplex.<br>Ajoute-en depuis l'onglet Twitch ou ZEvent (icône ▦ au survol d'une chaîne).</div>
+      </div>`;
+      return;
+    }
+
+    grid.innerHTML = chans.map(ch => {
+      const info     = _info[ch];
+      const isLive   = info?.live ?? false;
+      const isActive = _activeType === 'twitch' && ch === _activeChannel;
+      const thumb   = isLive
+        ? `<img src="https://static-cdn.jtvnw.net/previews-ttv/live_user_${ch}-440x248.jpg?t=${_mpRefreshTs}" alt="" loading="lazy">`
+        : `<div class="mp-offline">Hors ligne</div>`;
+      const viewers = isLive && info?.viewers ? `<span class="mp-viewers">${fmtViewers(info.viewers)} viewers</span>` : '';
+      return `<div class="mp-tile${isActive ? ' active' : ''}" data-ch="${ch}" onclick="playFromMultiplex('${ch}')" title="${info?.title ? escapeHtml(info.title) : ch}">
+        <div class="mp-thumb-wrap">
+          ${thumb}
+          ${isLive ? '<span class="mp-live-badge">EN DIRECT</span>' : ''}
+          ${viewers}
+          <button class="mp-remove" onclick="event.stopPropagation();toggleMultiplex('${ch}')" title="Retirer du multiplex">✕</button>
+        </div>
+        <div class="mp-name">${ch}</div>
+      </div>`;
+    }).join('');
+  }
+
+  function playFromMultiplex(ch) {
+    switchTab('twitch');
+    selectChannel(ch);
+  }
+
+  // Vignettes rafraîchies (nouvelle URL cache-bustée) toutes les 60s, seulement
+  // si la grille est visible — inutile de bosser pour un onglet caché.
+  setInterval(() => {
+    _mpRefreshTs = Date.now();
+    if (_currentTab === 'multiplex') renderMultiplexGrid();
+  }, 60_000);
 
   // ── Render: IPTV ───────────────────────────────────
   function _iptvKey(ch) { return ch.sources?.[0] || ch.tvg_id || ch.name; }
@@ -1226,6 +1464,7 @@
     saveFavs();
     renderTwitchList();
     renderZeventList();
+    renderMultiplexList();
   }
 
   function toggleFavIptv(idx) {
@@ -1514,6 +1753,8 @@
     trackUsage(_usageTwitch, channel, 'twitchoss_usage_twitch');
     renderTwitchList();
     renderZeventList();
+    renderMultiplexList();
+    renderMultiplexGrid();
     updateUrl({ ch: channel });
     document.getElementById('info-channel').textContent = channel;
     document.getElementById('info-hint').textContent    = '';
