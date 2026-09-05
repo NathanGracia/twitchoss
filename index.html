@@ -793,6 +793,7 @@
 
 <script>
   let hls = null;
+  let _loadToken = 0; // incrémenté à chaque sélection de chaîne, pour ignorer les réponses d'un chargement précédent devenu obsolète
   let _channels    = [];
   let _info        = {};
   let _iptvChannels = []; // [{name, url, logo}]
@@ -1504,6 +1505,10 @@
 
   // ── Channel selection ──────────────────────────────
   async function selectChannel(channel) {
+    // Reclic sur la chaîne déjà active/en cours de chargement : pas la peine de redémarrer le pipeline.
+    if (channel === _activeChannel && _activeType === 'twitch') return;
+
+    const token = ++_loadToken;
     _activeChannel = channel;
     _activeType    = 'twitch';
     trackUsage(_usageTwitch, channel, 'twitchoss_usage_twitch');
@@ -1518,13 +1523,18 @@
     showOverlay('loading');
     setChatMode('twitch', channel);
     await fetch(`/start/${channel}`);
+    if (token !== _loadToken) return; // une sélection plus récente a pris le relais entre-temps
     document.getElementById('loading-msg').textContent = 'Génération du flux HLS…';
     const ready = await waitForPlaylist('/hls/playlist.m3u8');
+    if (token !== _loadToken) return;
     if (!ready) { showOverlay('error', 'Chaîne hors ligne ou timeout'); return; }
     startHls('/hls/playlist.m3u8');
   }
 
   async function selectIptvChannel(idx) {
+    if (_activeType === 'iptv' && _currentIptvIdx === idx) return;
+
+    const token = ++_loadToken;
     const ch = _iptvChannels[idx];
     _activeChannel  = 'iptv:' + idx;
     _activeType     = 'iptv';
@@ -1550,6 +1560,7 @@
       body: JSON.stringify({sources}),
     }).then(r => r.json());
 
+    if (token !== _loadToken) return; // une sélection plus récente a pris le relais entre-temps
     if (!result.ok) { showOverlay('error', result.error || 'Flux indisponible'); return; }
     _dbg.mode = result.mode ?? '?';
     const speedInfo = result.dl_kbps
@@ -1575,6 +1586,7 @@
 
     // ffmpeg doit écrire le premier segment avant que la playlist existe
     const ready = await waitForPlaylist(result.playlist);
+    if (token !== _loadToken) return;
     if (!ready) { showOverlay('error', 'Flux indisponible ou timeout'); return; }
     startHls(result.playlist);
   }
@@ -1593,10 +1605,19 @@
   // Les navigateurs bloquent l'autoplay avec le son sans interaction utilisateur
   // (ex: sélection automatique au chargement de la page) -> on retente en muet.
   function attemptAutoplay(video) {
-    video.play().catch(() => {
+    video.play().catch(e => {
+      // NotAllowedError = le navigateur bloque vraiment l'autoplay avec le son (pas d'interaction récente) :
+      // on repasse en muet pour que la lecture démarre. Toute autre erreur (ex: AbortError d'un changement
+      // de source concurrent) est juste une interruption transitoire — on retente sans toucher au son de
+      // l'utilisateur, sinon changer de chaîne le son allumé le coupait à chaque fois.
+      if (e.name !== 'NotAllowedError') {
+        dbgLog('warn', `play() interrompu (${e.name}) — nouvelle tentative sans changer le son`);
+        video.play().catch(e2 => dbgLog('warn', `play() toujours refusé: ${e2.message}`));
+        return;
+      }
       video.muted = true;
       updateVolumeUI(video);
-      video.play().catch(e => dbgLog('warn', `play() refusé même en muet: ${e.message}`));
+      video.play().catch(e2 => dbgLog('warn', `play() refusé même en muet: ${e2.message}`));
     });
   }
 
@@ -1617,16 +1638,6 @@
     _dbg.fragInProgress = null; // {sn, t}
     // sessionInfo et speedRatio sont préservés (définis avant startHls)
     dbgLog('ok', `startHls → ${playlist}`);
-
-    // Événements vidéo natifs
-    const onWaiting = () => { _dbg.waitingCount++; dbgLog('warn', 'video: waiting (rebuffering)'); };
-    const onStalled = () => { _dbg.stallCount++;   dbgLog('err',  'video: stalled'); };
-    const onCanPlay = () => dbgLog('ok',  'video: canplay');
-    const onError   = () => { _dbg.errorCount++;   dbgLog('err',  `video: error ${video.error?.code} ${video.error?.message}`); };
-    video.addEventListener('waiting', onWaiting);
-    video.addEventListener('stalled', onStalled);
-    video.addEventListener('canplay', onCanPlay);
-    video.addEventListener('error',   onError);
 
     if (Hls.isSupported()) {
       hls = new Hls({
@@ -1737,6 +1748,20 @@
 
   document.getElementById('video').addEventListener('play',  () => updatePlayUI(document.getElementById('video')));
   document.getElementById('video').addEventListener('pause', () => updatePlayUI(document.getElementById('video')));
+
+  // Attachés une seule fois : le <video> est réutilisé d'une chaîne à l'autre
+  // (le re-attacher à chaque startHls() empilait les listeners indéfiniment).
+  document.getElementById('video').addEventListener('waiting', () => {
+    _dbg.waitingCount++; dbgLog('warn', 'video: waiting (rebuffering)');
+  });
+  document.getElementById('video').addEventListener('stalled', () => {
+    _dbg.stallCount++; dbgLog('err', 'video: stalled');
+  });
+  document.getElementById('video').addEventListener('canplay', () => dbgLog('ok', 'video: canplay'));
+  document.getElementById('video').addEventListener('error', () => {
+    const v = document.getElementById('video');
+    _dbg.errorCount++; dbgLog('err', `video: error ${v.error?.code} ${v.error?.message}`);
+  });
 
   document.addEventListener('keydown', e => {
     if (e.target.tagName === 'INPUT') return;
